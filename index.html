@@ -288,12 +288,12 @@ const isFlooded = (col, row) => {
 const EFFECT_META = {
   SLOW:       { label:'SLOW',        color:'#ff4444', pipe:'red',  desc:'half speed'         },
   REVERSE:    { label:'REVERSED',    color:'#ff6644', pipe:'red',  desc:'controls flipped'   },
-  DIZZY:      { label:'DARKNESS',    color:'#ff9944', pipe:'red',  desc:'darkness falls'     },
+  DARKNESS:   { label:'DARKNESS',    color:'#ff9944', pipe:'red',  desc:'darkness falls'     },
   SPEED:      { label:'SPEED',       color:'#44aaff', pipe:'blue', desc:'double speed'       },
   WATERPROOF: { label:'WATERPROOF',  color:'#44ddff', pipe:'blue', desc:'flood immunity'     },
   FREEZE:     { label:'FREEZE',      color:'#aaddff', pipe:'blue', desc:'flood pauses'       },
 };
-const RED_EFFECTS  = ['SLOW','REVERSE','DIZZY'];
+const RED_EFFECTS  = ['SLOW','REVERSE','DARKNESS'];
 const BLUE_EFFECTS = ['SPEED','SPEED','WATERPROOF','WATERPROOF','FREEZE'];
 
 let activeEffects = []; // {type, endTime}
@@ -710,6 +710,7 @@ const canvasToCell = (px, py) => {
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let gameWon = false, gameLost = false, frameTime = 0;
 let dissolveStartTime = -1, dissolveCol = 0, dissolveRow = 0;
+let winBall = null; // bouncing ball animation on win screen
 let gateModal = null;
 const sparks  = [];
 
@@ -842,7 +843,21 @@ function updatePlayer(dt) {
   }
 
   const mc=Math.floor(player.x), mr=Math.floor(player.y);
-  if (MAP[mr]?.[mc] === 9) gameWon = true;
+  if (MAP[mr]?.[mc] === 9) {
+    if (!gameWon) {
+      // Launch ball toward the exit wall direction
+      const [ex, ey] = exitPos;
+      // Cute hops toward the exit wall (not player.facing, which can be flipped by REVERSE)
+      const hopSpeed = 190;
+      let fx = 0, fy = 0;
+      if      (ex === 0)      fx = -1;
+      else if (ex === MW - 1) fx =  1;
+      else if (ey === 0)      fy = -1;
+      else                    fy =  1;
+      winBall = { x: W/2, y: H/2, vx: fx * hopSpeed, vy: fy * hopSpeed, t: 0 };
+    }
+    gameWon = true;
+  }
   if (!hasEffect('WATERPROOF') && isFlooded(mc, mr)) {
     if (!gameLost) { dissolveStartTime = frameTime; dissolveCol = mc; dissolveRow = mr; }
     gameLost = true;
@@ -852,7 +867,7 @@ function updatePlayer(dt) {
   const sk = `${mc},${mr}`;
   if (smokeGates[sk]) {
     const sg = smokeGates[sk];
-    const effDur = { FREEZE: 5, DIZZY: 5 };
+    const effDur = { FREEZE: 5, DARKNESS: 5 };
     if (sg.result === 'red'  || sg.result === 'both') applyEffect(sg.redEff,  effDur[sg.redEff]  ?? 10);
     if (sg.result === 'blue' || sg.result === 'both') applyEffect(sg.blueEff, effDur[sg.blueEff] ?? 10);
     delete smokeGates[sk];
@@ -1389,7 +1404,7 @@ function drawMaze() {
     ctx.fill();
   }
 
-  drawSlime(player.x * CELL, player.y * CELL);
+  if (!gameWon) drawSlime(player.x * CELL, player.y * CELL);
   ctx.restore();
 }
 
@@ -1479,6 +1494,25 @@ function drawHUD() {
 
 // ─── DRAW: END SCREEN ────────────────────────────────────────────────────────
 function drawEndScreen(won) {
+  // Hopping ball drawn before the overlay — subtle, no glow, clipped below HUD
+  if (won && winBall) {
+    const hopT = Math.pow(Math.abs(Math.sin(winBall.t * Math.PI * 3.0)), 0.5);
+    const yOff  = -34 * hopT;
+    const scale = 1 + 0.55 * hopT;
+    const bx = winBall.x, by = winBall.y + yOff;
+    const r = 11 * scale;
+
+    ctx.save();
+    const grad = ctx.createRadialGradient(bx - 3, by - 3, 1, bx, by, r);
+    grad.addColorStop(0, '#b8ffcc');
+    grad.addColorStop(1, '#27c745');
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+  }
+
   ctx.fillStyle = 'rgba(0,0,0,0.82)';
   ctx.fillRect(0,0,W,H);
   ctx.textAlign = 'center';
@@ -1501,7 +1535,7 @@ function softReset() {
   gateModal = null;
   sparks.length = 0;
   moving = false; walkTimer = 0; floodStarted = false;
-  dissolveStartTime = -1;
+  dissolveStartTime = -1; winBall = null;
   activeEffects = [];
   smokeGates = {};
   gatePuzzles = {};
@@ -1547,13 +1581,21 @@ function loop(ts) {
     }
   }
 
+  // Win ball physics — cute hops in facing direction
+  if (gameWon && winBall) {
+    winBall.t += dt;
+    winBall.x += winBall.vx * dt;
+    winBall.y += winBall.vy * dt;
+    if (winBall.x < -60 || winBall.x > W + 60 || winBall.y < -60 || winBall.y > H + 60) winBall = null;
+  }
+
   for (let i = sparks.length-1; i >= 0; i--) {
     sparks[i].p += dt * 2.8;
     if (sparks[i].p >= 1) sparks.splice(i, 1);
   }
 
   drawMaze();
-  if (hasEffect('DIZZY')) {
+  if (hasEffect('DARKNESS')) {
     const lightR = 85;
     const grad = ctx.createRadialGradient(W/2, H/2, lightR * 0.55, W/2, H/2, lightR * 1.35);
     grad.addColorStop(0,   'rgba(0,0,0,0)');
