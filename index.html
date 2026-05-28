@@ -15,27 +15,62 @@ body {
   height: 100vh;
 }
 canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,0.5); }
-#hint { color: #555; font: 11px monospace; margin-top: 6px; letter-spacing: 0.3px; }
-#restart-btn, #newmaze-btn {
-  margin-top: 6px;
-  background: none;
-  border: 1px solid #444;
-  color: #666;
-  font: 11px monospace;
-  padding: 3px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  letter-spacing: 0.3px;
+#hud-area { display: flex; flex-direction: column; align-items: center; gap: 0; margin-top: 5px; width: 800px; }
+#top-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 100%; margin-bottom: 4px; }
+#controls-left  { text-align: left; }
+#controls-right { text-align: right; }
+#objective      { color: #d0d0d0; font: 11px monospace; letter-spacing: 0.3px; }
+#controls-left  { color: #777;    font: 11px monospace; letter-spacing: 0.3px; }
+#controls-right { color: #777;    font: 11px monospace; letter-spacing: 0.3px; }
+#btns  { margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+#mode-outer { display: flex; flex-direction: column; align-items: center; gap: 3px; margin-top: 4px; }
+#mode-row  { display: flex; align-items: flex-start; gap: 6px; color: #666; font: 11px monospace; letter-spacing: 0.3px; }
+#mode-label { margin-top: 4px; }
+#mode-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+#restart-btn, #newmaze-btn, #cheatsheet-btn {
+  background: none; border: 1px solid #555; color: #888;
+  font: 11px monospace; padding: 3px 10px; border-radius: 4px;
+  cursor: pointer; letter-spacing: 0.3px;
 }
-#restart-btn:hover, #newmaze-btn:hover { border-color: #888; color: #aaa; }
-#newmaze-btn { margin-left: 6px; }
+#restart-btn:hover, #newmaze-btn:hover, #cheatsheet-btn:hover { border-color: #999; color: #bbb; }
+#mode-toggle {
+  display: inline-flex; border: 1px solid #555; border-radius: 4px;
+  overflow: hidden; font: 11px monospace; letter-spacing: 0.3px;
+}
+#mode-toggle span {
+  padding: 3px 10px; cursor: pointer; color: #777; user-select: none;
+  transition: color 0.15s, background 0.15s;
+}
+#mode-toggle span.active { color: #aaa; background: #2a2a2a; }
+#mode-toggle span:hover:not(.active) { color: #999; }
+#mode-note  { color: #666; font: 10px monospace; letter-spacing: 0.3px; text-align: center; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hint">WASD / arrow keys &nbsp;·&nbsp; Enter or click golden gates &nbsp;·&nbsp; reach the ★ in the center!</div>
-<button id="restart-btn">restart (keep maze)</button>
-<button id="newmaze-btn">new maze</button>
+<div id="hud-area">
+  <div id="top-row">
+    <div id="controls-left">WASD / arrows to move</div>
+    <div id="objective">reach the ★ on the edge before you dissolve</div>
+    <div id="controls-right">Enter / click to inspect gate</div>
+  </div>
+  <div id="btns">
+    <button id="restart-btn">restart [R]</button>
+    <button id="newmaze-btn">new maze [N]</button>
+    <button id="cheatsheet-btn">cheatsheet [C]</button>
+  </div>
+  <div id="mode-outer">
+    <div id="mode-row"><span id="mode-label">puzzle mode:</span>
+      <div id="mode-wrap">
+        <div id="mode-toggle">
+          <span id="toggle-compare" class="active">basic boolean</span>
+          <span id="toggle-gates">logic gates</span>
+        </div>
+        <div id="mode-note">resets the maze</div>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
 'use strict';
 
@@ -47,8 +82,8 @@ canvas.width  = W;
 canvas.height = H;
 
 // ─── MAP ─────────────────────────────────────────────────────────────────────
-const MW = 25, MH = 25, CELL = 38;
-const CX = 13, CY = 13;
+const MW = 35, MH = 35, CELL = 38;
+const CX = 17, CY = 17;
 
 // Spiral-biased maze: DFS prefers clockwise rotation around center at the edges,
 // becoming random near the center — gives a spiral outer structure with maze-like core.
@@ -154,41 +189,70 @@ function placeGoldenGates(map, w, h, count, seed) {
 }
 
 let runSeed = Date.now() >>> 0;
+let exitPos = [1, 1];
 
 function makeMap() {
   const s = runSeed;
   const m = buildSpiralMaze(MW, MH, s);
 
-  // Find the unique path from start to center (tree has exactly one path)
-  const path = bfsPath(m, MW, MH, 1, 1, CX, CY);
+  // Find open cells on or near the outer boundary as exit candidates
+  const edgeCandidates = [];
+  for (let r = 1; r < MH - 1; r++) {
+    for (let c = 1; c < MW - 1; c++) {
+      if (m[r][c] === 0 && (r === 1 || r === MH-2 || c === 1 || c === MW-2)) {
+        edgeCandidates.push([c, r]);
+      }
+    }
+  }
+  // Seeded shuffle to pick a deterministic exit
+  let rng = s ^ 0xDEAD5EED;
+  for (let i = edgeCandidates.length - 1; i > 0; i--) {
+    rng = (rng ^ (rng >>> 17)) >>> 0; rng = Math.imul(rng, 0x9e3779b9) >>> 0; rng = (rng ^ (rng >>> 15)) >>> 0;
+    const j = rng % (i + 1);
+    [edgeCandidates[i], edgeCandidates[j]] = [edgeCandidates[j], edgeCandidates[i]];
+  }
+  const [ex, ey] = edgeCandidates[0] || [1, 1];
+  exitPos = [ex, ey];
 
-  // Only place mandatory gates on the inner 55% of the path (closer to center)
-  // so the player can explore freely before hitting a gate checkpoint
-  const passages = path.filter(([x, y]) => !((x & 1) && (y & 1)) && x > 1 && y > 1);
-  const innerPassages = passages.slice(Math.floor(passages.length * 0.45));
+  // BFS from center to exit for mandatory gate placement
+  const path = bfsPath(m, MW, MH, CX, CY, ex, ey);
+
+  // Place mandatory gates on the outer 55% of the path (away from center)
+  const passages = path.filter(([x, y]) => !((x & 1) && (y & 1)));
+  const outerPassages = passages.slice(Math.floor(passages.length * 0.45));
   const mandatoryGates = 4;
-  const step = Math.max(1, Math.floor(innerPassages.length / (mandatoryGates + 1)));
-  for (let i = 1; i <= mandatoryGates && i * step < innerPassages.length; i++) {
-    const [gx, gy] = innerPassages[i * step];
+  const step = Math.max(1, Math.floor(outerPassages.length / (mandatoryGates + 1)));
+  for (let i = 1; i <= mandatoryGates && i * step < outerPassages.length; i++) {
+    const [gx, gy] = outerPassages[i * step];
     const adj = [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) => m[gy+dy]?.[gx+dx] === 2);
     if (!adj) m[gy][gx] = 2;
   }
 
-  // Optional gates biased toward center
+  // Carve open a 5x5 area around center so player can move freely at start
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx2 = -2; dx2 <= 2; dx2++) {
+      const cr = CY+dy, cc = CX+dx2;
+      if (cr > 0 && cr < MH-1 && cc > 0 && cc < MW-1 && m[cr][cc] === 1) m[cr][cc] = 0;
+    }
+  }
+
+  // Optional gates spread across the maze
   placeGoldenGates(m, MW, MH, 28, s ^ 0xBEEF1234);
-  m[CY][CX] = 9;
+  m[ey][ex] = 9;
   return m;
 }
 let MAP = makeMap();
 let savedGates = MAP.flatMap((row, r) => row.map((v, c) => v === 2 ? [c, r] : null).filter(Boolean));
 
 // ─── FLOOD ───────────────────────────────────────────────────────────────────
-const FLOOD_RATE_BASE = 0.18;  // cells/sec at start
-const FLOOD_RATE_MAX  = 0.55;  // cells/sec at peak
-const FLOOD_RATE = FLOOD_RATE_BASE; // used for initial delay calc only
+const FLOOD_RATE_BASE = 0.333;  // cells/sec (~3s per block) — normal mode
+const FLOOD_RATE_MAX  = 1.5;    // cells/sec at peak (~0.67s per block) — normal mode
+const FLOOD_RATE = FLOOD_RATE_BASE;
+const floodBase = () => hardMode ? 0.25 : FLOOD_RATE_BASE; // hard: ~4s/block
+const floodMax  = () => hardMode ? 0.67 : FLOOD_RATE_MAX;  // hard: ~1.5s/block at peak
 let floodDepth = {};
 let maxFloodDepth = 1;
-let currentFloodDepth = -(FLOOD_RATE * 12);
+let currentFloodDepth = -(FLOOD_RATE * 3);
 
 const floodPassable = v => v === 0 || v === 2; // water flows through open cells and gold gates
 
@@ -199,8 +263,7 @@ function computeFlood() {
     const k = `${c},${r}`;
     if (floodPassable(MAP[r][c]) && !(k in floodDepth)) { floodDepth[k]=0; queue.push(c,r,0); }
   };
-  for (let c = 0; c < MW; c++) { add(c,1); add(c,MH-2); }
-  for (let r = 2; r < MH-2; r++) { add(1,r); add(MW-2,r); }
+  add(CX, CY); // flood rises from center outward
   let i = 0, mx = 0;
   while (i < queue.length) {
     const col = queue[i++], row = queue[i++], d = queue[i++];
@@ -225,12 +288,12 @@ const EFFECT_META = {
   SLOW:       { label:'SLOW',        color:'#ff4444', pipe:'red',  desc:'half speed'         },
   REVERSE:    { label:'REVERSED',    color:'#ff6644', pipe:'red',  desc:'controls flipped'   },
   DIZZY:      { label:'DARKNESS',    color:'#ff9944', pipe:'red',  desc:'darkness falls'     },
-  SPEED:      { label:'SPEED+',      color:'#44aaff', pipe:'blue', desc:'double speed'       },
+  SPEED:      { label:'SPEED',       color:'#44aaff', pipe:'blue', desc:'double speed'       },
   WATERPROOF: { label:'WATERPROOF',  color:'#44ddff', pipe:'blue', desc:'flood immunity'     },
   FREEZE:     { label:'FREEZE',      color:'#aaddff', pipe:'blue', desc:'flood pauses'       },
 };
 const RED_EFFECTS  = ['SLOW','REVERSE','DIZZY'];
-const BLUE_EFFECTS = ['SPEED','WATERPROOF','FREEZE'];
+const BLUE_EFFECTS = ['SPEED','SPEED','WATERPROOF','WATERPROOF','FREEZE'];
 
 let activeEffects = []; // {type, endTime}
 
@@ -258,24 +321,50 @@ function seededRng(seed) {
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
 }
 
+let hardMode = false;
+let showCheatsheet = false;
+let showIntro = true;
+let introPage = 0; // 0 = story, 1 = how to play
+
+const LOGIC_GATES = ['AND','OR','XOR','NAND','NOR','XNOR'];
+const GATE_INFO = [
+  { name:'AND',  desc:'both conditions must pass'       },
+  { name:'OR',   desc:'either condition must pass'      },
+  { name:'XOR',  desc:'exactly one must pass'           },
+  { name:'NAND', desc:'not both — at least one fails'   },
+  { name:'NOR',  desc:'neither condition passes'        },
+  { name:'XNOR', desc:'same result — both pass or both fail' },
+];
+
+function evalConnector(r1, r2, connector) {
+  switch(connector) {
+    case '&&': case 'AND':  return r1 && r2;
+    case '||': case 'OR':   return r1 || r2;
+    case 'XOR':  return r1 !== r2;
+    case 'NAND': return !(r1 && r2);
+    case 'NOR':  return !(r1 || r2);
+    case 'XNOR': return r1 === r2;
+  }
+  return false;
+}
+
 function makePuzzle() {
   const numPool = [2,3,4,5,6,7,8,10,12,15,18,20,25,30];
   const valPool = [1,2,3,4,5,6,8,10,12,15,18,20,25,30,35];
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const connPool = hardMode ? LOGIC_GATES : ['&&','||'];
 
   const canOnlyBlue = (connector, n1, n2, redVal, blueVal) => {
     for (const op1 of OPERATORS) for (const op2 of OPERATORS) {
       const r1=evalOp(redVal,op1,n1),  r2=evalOp(redVal,op2,n2);
       const b1=evalOp(blueVal,op1,n1), b2=evalOp(blueVal,op2,n2);
-      const ro = connector==='&&' ? r1&&r2 : r1||r2;
-      const bo = connector==='&&' ? b1&&b2 : b1||b2;
-      if (bo && !ro) return true;
+      if (evalConnector(b1,b2,connector) && !evalConnector(r1,r2,connector)) return true;
     }
     return false;
   };
 
   for (let attempt = 0; attempt < 100; attempt++) {
-    const connector = Math.random() < 0.5 ? '&&' : '||';
+    const connector = pick(connPool);
     const n1 = pick(numPool);
     let n2; do { n2 = pick(numPool); } while (n2 === n1);
     let redVal = pick(valPool), blueVal;
@@ -283,8 +372,8 @@ function makePuzzle() {
     if (!canOnlyBlue(connector, n1, n2, redVal, blueVal)) continue;
     return { connector, n1, n2, redVal, blueVal, redEff: pick(RED_EFFECTS), blueEff: pick(BLUE_EFFECTS) };
   }
-  // guaranteed fallback
-  return { connector:'||', n1:5, n2:10, redVal:3, blueVal:12, redEff:pick(RED_EFFECTS), blueEff:pick(BLUE_EFFECTS) };
+  const fc = hardMode ? 'XOR' : '||';
+  return { connector:fc, n1:5, n2:10, redVal:3, blueVal:12, redEff:pick(RED_EFFECTS), blueEff:pick(BLUE_EFFECTS) };
 }
 
 function evalOp(x, op, n) {
@@ -303,21 +392,276 @@ function evalPuzzle(pz, val) {
   if (!pz.slot1 || !pz.slot2) return false;
   const r1 = evalOp(val, pz.slot1, pz.n1);
   const r2 = evalOp(val, pz.slot2, pz.n2);
-  return pz.connector === '&&' ? r1 && r2 : r1 || r2;
+  return evalConnector(r1, r2, pz.connector);
+}
+
+function drawCheatsheet() {
+  const cw = 340;
+  const ch = hardMode ? 226 : 284;
+  const cx = W/2 - cw/2, cy = H/2 - ch/2;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.86)';
+  ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, 10); ctx.fill();
+  ctx.strokeStyle = '#c47f00'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, 10); ctx.stroke();
+
+  const row = (label, desc, y, labelColor='#f0c040') => {
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = labelColor;
+    ctx.fillText(label.padEnd(6), cx + 18, y);
+    ctx.font = '11px monospace'; ctx.fillStyle = '#aaa';
+    ctx.fillText(desc, cx + 82, y);
+  };
+  const section = (title, y) => {
+    ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#555'; ctx.textAlign = 'left';
+    ctx.fillText(title, cx + 18, y);
+  };
+  const divider = y => {
+    ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx + 14, y); ctx.lineTo(cx + cw - 14, y); ctx.stroke();
+  };
+
+  ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#c47f00';
+  ctx.fillText(hardMode ? 'LOGIC GATES  (C to close)' : 'BASIC BOOLEAN EXPRESSIONS  (C to close)', W/2, cy + 20);
+
+  if (hardMode) {
+    GATE_INFO.forEach(({ name, desc }, i) => row(name, desc, cy + 44 + i * 28));
+  } else {
+    section('CONNECTORS', cy + 40);
+    row('&&', 'both conditions must pass', cy + 56);
+    row('||', 'either condition must pass', cy + 78);
+    divider(cy + 96);
+    section('OPERATORS', cy + 112);
+    [
+      ['<',  'less than'],
+      ['>',  'greater than'],
+      ['==', 'equals'],
+      ['!=', 'not equal'],
+      ['<=', 'less than or equal'],
+      ['>=', 'greater than or equal'],
+    ].forEach(([name, desc], i) => row(name, desc, cy + 128 + i * 24));
+  }
+}
+
+function drawIntro() {
+  const cw = 460, ch = 300;
+  const cx = W/2 - cw/2, cy = H/2 - ch/2;
+
+  // Dim backdrop
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Card
+  ctx.fillStyle = '#0e0e0e';
+  ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, 10); ctx.fill();
+  ctx.strokeStyle = '#c47f00'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, 10); ctx.stroke();
+
+  ctx.textAlign = 'center';
+
+  if (introPage === 0) {
+    // Draw a little slime blob
+    const bx = W/2, by = cy + 58;
+    ctx.fillStyle = '#3ecf3e';
+    ctx.beginPath(); ctx.arc(bx, by, 18, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.38)';
+    ctx.beginPath(); ctx.ellipse(bx - 5, by - 6, 7, 4, -0.4, 0, Math.PI*2); ctx.fill();
+
+    ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#c47f00';
+    ctx.fillText('YOU ARE A SLIME.', W/2, cy + 98);
+
+    ctx.font = '12px monospace'; ctx.fillStyle = '#aaa';
+    ctx.fillText('you have escaped the laboratory.', W/2, cy + 126);
+    ctx.fillText('the scientists are not pleased.', W/2, cy + 145);
+    ctx.fillText('they\'ve released a flood to stop you.', W/2, cy + 164);
+
+    // "reach the [mini exit block] on the outer edge before you dissolve."
+    const rp1 = 'reach the ', rp2 = ' on the outer edge before you dissolve.';
+    ctx.font = '12px monospace';
+    const rw1 = ctx.measureText(rp1).width, rw2 = ctx.measureText(rp2).width;
+    const rsz = 13, rtotalW = rw1 + rsz + rw2;
+    const rsx = W/2 - rtotalW/2, rty = cy + 192;
+    ctx.fillStyle = '#666'; ctx.textAlign = 'left';
+    ctx.fillText(rp1, rsx, rty);
+    // mini exit tile
+    const rbx = rsx + rw1, rby2 = rty - rsz + 2;
+    ctx.fillStyle = '#e84422'; ctx.fillRect(rbx, rby2, rsz, rsz);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.arc(rbx+rsz/2, rby2+rsz/2, rsz*0.3, 0, Math.PI*2); ctx.fill();
+    ctx.font = `bold ${Math.floor(rsz*0.65)}px sans-serif`;
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    ctx.fillText('★', rbx+rsz/2, rby2+rsz*0.78);
+    ctx.font = '12px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'left';
+    ctx.fillText(rp2, rbx + rsz, rty);
+    ctx.textAlign = 'center';
+
+    // Page dots (3)
+    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 - 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2,      cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.font = '10px monospace'; ctx.fillStyle = '#444';
+    ctx.fillText('press any key  →', W/2, cy + ch - 12);
+
+  } else if (introPage === 1) {
+    ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00';
+    ctx.fillText('HOW TO PLAY', W/2, cy + 30);
+
+    const row = (key, desc, y) => {
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#f0c040';
+      ctx.fillText(key, cx + 30, y);
+      ctx.font = '11px monospace'; ctx.fillStyle = '#aaa';
+      ctx.fillText(desc, cx + 160, y);
+      ctx.textAlign = 'center';
+    };
+
+    row('WASD / arrows',  'move',                          cy + 58);
+    row('Enter / click',  'interact with a gate next to you',       cy + 78);
+    row('R',              'restart (same maze)',            cy + 98);
+    row('N',              'new maze',                       cy + 118);
+    row('C',              'cheatsheet (puzzle reference)',  cy + 138);
+
+    ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+152); ctx.lineTo(cx+cw-20, cy+152); ctx.stroke();
+
+    ctx.font = '11px monospace'; ctx.fillStyle = '#666';
+    ctx.fillText('click a golden gate, or stand beside it and press Enter', W/2, cy + 170);
+    ctx.fillText('flood rises from the center — don\'t dawdle', W/2, cy + 190);
+
+    // Page dots (3)
+    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2,      cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.font = '10px monospace'; ctx.fillStyle = '#444';
+    ctx.fillText('press any key  →', W/2, cy + ch - 12);
+
+  } else {
+    // Page 3 — puzzle visual
+    ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00';
+    ctx.fillText('THE GATE PUZZLE', W/2, cy + 28);
+
+    // Mini pipe + slot diagram
+    const mx = cx + 30, mw = cw - 60;
+    const midX = mx + mw / 2;
+    const pipeY = cy + 46, pipeH = 52;
+    const pipeW = 120;
+
+    // Blue pipe (left)
+    ctx.fillStyle = '#080e1e';
+    ctx.beginPath(); ctx.roundRect(mx, pipeY, pipeW, pipeH, 6); ctx.fill();
+    ctx.strokeStyle = '#5599ff'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.roundRect(mx, pipeY, pipeW, pipeH, 6); ctx.stroke();
+    ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#5599ff'; ctx.textAlign = 'center';
+    ctx.fillText('x = 12', mx + pipeW/2, pipeY + 18);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#4488cc';
+    ctx.fillText('SPEED', mx + pipeW/2, pipeY + 34);
+    ctx.fillText('positive effect', mx + pipeW/2, pipeY + 47);
+
+    // Red pipe (right)
+    const rpx = mx + mw - pipeW;
+    ctx.fillStyle = '#1e0808';
+    ctx.beginPath(); ctx.roundRect(rpx, pipeY, pipeW, pipeH, 6); ctx.fill();
+    ctx.strokeStyle = '#ff5555'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.roundRect(rpx, pipeY, pipeW, pipeH, 6); ctx.stroke();
+    ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#ff5555'; ctx.textAlign = 'center';
+    ctx.fillText('x = 5', rpx + pipeW/2, pipeY + 18);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#cc4444';
+    ctx.fillText('SLOW', rpx + pipeW/2, pipeY + 34);
+    ctx.fillText('negative effect', rpx + pipeW/2, pipeY + 47);
+
+    // Slot boxes in the middle
+    const slotW = 34, slotH = 22, slotY = pipeY + pipeH/2 - slotH/2;
+    const slot1X = midX - slotW - 28, slot2X = midX + 28;
+
+    // Connector label
+    ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
+    ctx.fillText('&&', midX, slotY + 15);
+
+    // Slot 1
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.roundRect(slot1X, slotY, slotW, slotH, 4); ctx.fill();
+    ctx.strokeStyle = '#5599ff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(slot1X, slotY, slotW, slotH, 4); ctx.stroke();
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#f0c040'; ctx.textAlign = 'center';
+    ctx.fillText('?', slot1X + slotW/2, slotY + 15);
+
+    // Slot 2
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.roundRect(slot2X, slotY, slotW, slotH, 4); ctx.fill();
+    ctx.strokeStyle = '#ff5555'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(slot2X, slotY, slotW, slotH, 4); ctx.stroke();
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#f0c040'; ctx.textAlign = 'center';
+    ctx.fillText('?', slot2X + slotW/2, slotY + 15);
+
+    // Labels under slots
+    ctx.font = '9px monospace'; ctx.fillStyle = '#555'; ctx.textAlign = 'center';
+    ctx.fillText('x ? 7', slot1X + slotW/2, slotY + slotH + 12);
+    ctx.fillText('x ? 3', slot2X + slotW/2, slotY + slotH + 12);
+
+    ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+128); ctx.lineTo(cx+cw-20, cy+128); ctx.stroke();
+
+    ctx.font = '11px monospace'; ctx.fillStyle = '#aaa'; ctx.textAlign = 'center';
+    ctx.fillText('pick an operator for each slot  (<  >  ==  !=  <=  >=)', W/2, cy + 147);
+    ctx.font = '11px monospace'; ctx.fillStyle = '#666';
+    ctx.fillText('satisfy a condition → that pipe opens with its effect', W/2, cy + 166);
+    ctx.fillText('satisfy both → both pipes open', W/2, cy + 185);
+    ctx.fillText('satisfy neither → gate stays sealed', W/2, cy + 204);
+
+    // Page dots (3)
+    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2,      cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 + 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.font = '10px monospace'; ctx.fillStyle = '#444';
+    ctx.fillText('press any key to start', W/2, cy + ch - 12);
+  }
 }
 
 // ─── PLAYER ──────────────────────────────────────────────────────────────────
-const player  = { x: 1.5, y: 1.5, facing: [1, 0] }; // [dc, dr]
+const player  = { x: CX+0.5, y: CY+0.5, facing: [1, 0] }; // [dc, dr]
 const SPEED   = 0.07;
 const RADIUS  = 0.3;
-let moving    = false;
-let walkTimer = 0;
+let moving       = false;
+let walkTimer    = 0;
+let floodStarted = false;
 
 // ─── INPUT ───────────────────────────────────────────────────────────────────
 const keys = {};
+function dismissIntro() {
+  if (introPage < 2) { introPage++; return; }
+  showIntro = false;
+}
+
 window.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  if (showIntro) { dismissIntro(); return; }
+  if (e.key === 'c' || e.key === 'C') { showCheatsheet = !showCheatsheet; return; }
+  if (!gateModal && (e.key === 'r' || e.key === 'R')) { softReset(); return; }
+  if (!gateModal && (e.key === 'n' || e.key === 'N')) { reset(); return; }
+  if (gateModal && gateModal.phase !== 'done') {
+    const opKey = { ',':'<', '<':'<', '.':'>', '>':'>', '=':'==', '+':'==', '1':'!=', '!':'!=' };
+    const op = opKey[e.key];
+    if (op) {
+      e.preventDefault();
+      const m = gateModal;
+      if (m.selectedSlot === 1) { m.slot1 = op; if (!m.slot2) m.selectedSlot = 2; }
+      else                      { m.slot2 = op; if (!m.slot1) m.selectedSlot = 1; }
+      return;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      gateModal.selectedSlot = gateModal.selectedSlot === 1 ? 2 : 1;
+      return;
+    }
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      const m = gateModal;
+      if (m.selectedSlot === 1) m.slot1 = null;
+      else m.slot2 = null;
+      return;
+    }
+  }
   if (e.key === 'Enter') {
     if (gateModal) {
       if (gateModal.phase === 'done') { gateModal = null; return; }
@@ -365,7 +709,8 @@ const sparks  = [];
 // ─── GATE MODAL LOGIC ────────────────────────────────────────────────────────
 function openGateModal(col, row) {
   const k = `${col},${row}`;
-  const pz = makePuzzle();
+  if (!gatePuzzles[k]) gatePuzzles[k] = makePuzzle();
+  const pz = gatePuzzles[k];
   gateModal = {
     col, row,
     connector: pz.connector, n1: pz.n1, n2: pz.n2,
@@ -414,6 +759,7 @@ function handleModalClick(cx, cy) {
 function resolveGate() {
   const m = gateModal;
   if (m.result !== 'none') {
+    delete gatePuzzles[`${m.col},${m.row}`];
     MAP[m.row][m.col] = 0;
     computeFlood();
     addSmokeGate(m.col, m.row, m.result, m.redEff, m.blueEff);
@@ -424,6 +770,7 @@ function resolveGate() {
 
 // ─── CLICK ───────────────────────────────────────────────────────────────────
 canvas.addEventListener('click', e => {
+  if (showIntro) { dismissIntro(); return; }
   if (gameWon || gameLost) return;
   const r  = canvas.getBoundingClientRect();
   const cx = (e.clientX-r.left)*(W/r.width);
@@ -438,7 +785,8 @@ const passable = (x, y) => {
   const mc = Math.floor(x), mr = Math.floor(y);
   if (mc<0||mc>=MW||mr<0||mr>=MH) return false;
   const cell = MAP[mr][mc];
-  if (cell !== 0 && cell !== 9) return false;
+  const floodedGate = cell === 2 && isFlooded(mc, mr); // water covers the gate — physically passable
+  if (cell !== 0 && cell !== 9 && !floodedGate) return false;
   if (isFlooded(mc, mr) && !hasEffect('WATERPROOF')) return false;
   return true;
 };
@@ -454,8 +802,10 @@ function updatePlayer(dt) {
   if (keys['ArrowLeft'] ||keys['a']||keys['A']) dx -= rev;
   if (keys['ArrowRight']||keys['d']||keys['D']) dx += rev;
 
-  const spd = hasEffect('SLOW') ? SPEED*0.45 : hasEffect('SPEED') ? SPEED*1.85 : SPEED;
+  const hasSlow = hasEffect('SLOW'), hasSpd = hasEffect('SPEED');
+  const spd = (hasSlow && hasSpd) ? SPEED : hasSlow ? SPEED*0.45 : hasSpd ? SPEED*1.85 : SPEED;
   moving = dx!==0||dy!==0;
+  if (moving) floodStarted = true;
   if (moving) {
     walkTimer += dt;
     // Track facing: prefer the axis with stronger input; diagonal → last single axis wins
@@ -492,8 +842,9 @@ function updatePlayer(dt) {
   const sk = `${mc},${mr}`;
   if (smokeGates[sk]) {
     const sg = smokeGates[sk];
-    if (sg.result === 'red'  || sg.result === 'both') applyEffect(sg.redEff);
-    if (sg.result === 'blue' || sg.result === 'both') applyEffect(sg.blueEff);
+    const effDur = { FREEZE: 5, DIZZY: 5 };
+    if (sg.result === 'red'  || sg.result === 'both') applyEffect(sg.redEff,  effDur[sg.redEff]  ?? 10);
+    if (sg.result === 'blue' || sg.result === 'both') applyEffect(sg.blueEff, effDur[sg.blueEff] ?? 10);
     delete smokeGates[sk];
   }
 }
@@ -555,14 +906,14 @@ function drawGateModal() {
   // Gold header bar with rivets
   const sh = 0.82 + 0.18*Math.sin(frameTime*3.2);
   ctx.fillStyle = `rgb(${Math.floor(190*sh)},${Math.floor(120*sh)},0)`;
-  ctx.beginPath(); ctx.roundRect(mx, my, mw, 46, [12,12,0,0]); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(mx, my, mw, 28, [12,12,0,0]); ctx.fill();
   // Rivet dots
   for (const rx of [mx+14, mx+mw-14]) {
-    ctx.fillStyle = '#1a0e00'; ctx.beginPath(); ctx.arc(rx, my+23, 5, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,200,60,0.4)'; ctx.beginPath(); ctx.arc(rx-1, my+21, 2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1a0e00'; ctx.beginPath(); ctx.arc(rx, my+14, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,200,60,0.4)'; ctx.beginPath(); ctx.arc(rx-1, my+13, 1.5, 0, Math.PI*2); ctx.fill();
   }
-  ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#1a0e00';
-  ctx.fillText('GATE LOCK', W/2, my+30);
+  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#1a0e00';
+  ctx.fillText('GATE LOCK', W/2, my+19);
 
   drawPuzzleUI(mx, my, mw, mh);
 
@@ -596,109 +947,130 @@ function drawGateModal() {
 function drawPuzzleUI(mx, my, mw, mh) {
   const m  = gateModal;
   const hz = m.hitZones;
-  const contentY = my + 56;
-  const pipeW = 104, pipeH = 172, pipeY = contentY + 2;
+  const contentY = my + 36;
+  const pipeW = 104;
+  const lh = 172;                              // lock box logical height (drives layout)
+  const pipeH = mh - 56;                       // pipes fill full content height
+  const pipeY = contentY;                      // pipes start right at content top
 
   const pipeLX = mx + 12;
   const pipeRX = mx + mw - 12 - pipeW;
 
-  // Lock box: leaves 38px gap on each side for curves
-  const lx = mx + 154, lw = mw - 308, lh = 172;
+  // Lock box: wider to prevent number clipping
+  const lx = mx + 130, lw = mw - 260;
   const ly = contentY + 2;
   const lockMidY = ly + lh / 2;
   const slotCX = lx + lw / 2; // = W/2
 
-  // ── Curved pipe connectors (behind everything)
-  const curvePipe = (x1, y1, x2, y2, col, shadow) => {
-    const mid = (x1 + x2) / 2;
-    ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(x1, y1);
-    ctx.bezierCurveTo(mid, y1, mid, y2, x2, y2);
-    ctx.strokeStyle = shadow; ctx.lineWidth = 13; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x1, y1);
-    ctx.bezierCurveTo(mid, y1, mid, y2, x2, y2);
-    ctx.strokeStyle = col; ctx.lineWidth = 8; ctx.stroke();
-    ctx.lineCap = 'butt';
+  // ── Horizontal pipe connectors — slow bubbles + sparkles flowing toward lock
+  const drawHorizPipe = (x1, x2, y, fogCol, bgCol, flowDir) => {
+    const ph = 38, py2 = y - ph/2, pipeLen = x2 - x1;
+    // Dark base fill (same as tall pipe approach)
+    ctx.fillStyle = bgCol;
+    ctx.fillRect(x1, py2, pipeLen, ph);
+    // Subtle depth gradient
+    const grad = ctx.createLinearGradient(0, py2, 0, py2 + ph);
+    grad.addColorStop(0,   'rgba(255,255,255,0.07)');
+    grad.addColorStop(0.35,'rgba(255,255,255,0)');
+    grad.addColorStop(1,   'rgba(0,0,0,0.28)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x1, py2, pipeLen, ph);
+    // Top highlight strip
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(x1 + 1, py2 + 1, pipeLen - 2, 4);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x1, py2, pipeLen, ph); ctx.clip();
+    // Slow drifting blobs — same formula as tall drawPipe
+    for (let i = 0; i < 8; i++) {
+      const phase = (i / 8) * Math.PI * 2 + frameTime * (0.4 + i * 0.07);
+      const progress = ((frameTime * 18 / pipeLen + i / 8) % 1 + 1) % 1;
+      const bx2 = flowDir > 0 ? x1 + progress * pipeLen : x2 - progress * pipeLen;
+      const fw = 7 + Math.sin(phase) * 3;
+      ctx.globalAlpha = 0.25 + 0.25 * Math.sin(phase + 1.2);
+      ctx.fillStyle = fogCol;
+      ctx.beginPath(); ctx.ellipse(bx2, y + Math.sin(phase * 1.4) * (ph * 0.22), fw, fw * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // Sparkle dots
+    for (let i = 0; i < 5; i++) {
+      const blink = Math.sin(frameTime * 3 + i * 1.4);
+      if (blink < 0) continue;
+      const sx = x1 + (((i * 41 + frameTime * (flowDir > 0 ? 8 : -8)) % pipeLen) + pipeLen) % pipeLen;
+      const sy = py2 + 5 + (i % 3) * ((ph - 10) / 2);
+      ctx.globalAlpha = blink * 0.7;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(sx, sy, 1.5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
   };
-  curvePipe(pipeLX + pipeW, pipeY + pipeH/2, lx,       lockMidY, '#cc2222', '#550000');
-  curvePipe(lx + lw,        lockMidY,        pipeRX,   pipeY + pipeH/2, '#2255cc', '#000d33');
+  // Blue on LEFT flows right→lock; Red on RIGHT flows left→lock
+  drawHorizPipe(pipeLX + pipeW, slotCX, lockMidY, '#5599ff', '#080e1e', 1);
+  drawHorizPipe(slotCX, pipeRX,          lockMidY, '#ff5555', '#1e0808', -1);
 
-  // ── Red pipe
-  drawPipe(pipeLX, pipeY, pipeW, pipeH, '#ff5555', '#1e0808');
-  ctx.strokeStyle = '#882222'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(pipeLX, pipeY, pipeW, pipeH, 8); ctx.stroke();
-  ctx.fillStyle = '#8a1a1a';
-  ctx.beginPath(); ctx.roundRect(pipeLX, pipeY, pipeW, 24, [8,8,0,0]); ctx.fill();
-  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffcccc';
-  ctx.fillText('RED PIPE', pipeLX + pipeW/2, pipeY + 16);
-  const rby = pipeY + pipeH/2 - 26;
-  ctx.fillStyle = 'rgba(0,0,0,0.82)';
-  ctx.beginPath(); ctx.roundRect(pipeLX + 8, rby, pipeW - 16, 54, 5); ctx.fill();
-  ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#ff5555';
-  ctx.fillText(`x = ${m.redVal}`, pipeLX + pipeW/2, rby + 20);
-  ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ff9999';
-  ctx.fillText(EFFECT_META[m.redEff].label, pipeLX + pipeW/2, rby + 36);
-  ctx.font = '9px monospace'; ctx.fillStyle = '#aa6666';
-  ctx.fillText(EFFECT_META[m.redEff].desc, pipeLX + pipeW/2, rby + 50);
-
-  // ── Blue pipe
-  drawPipe(pipeRX, pipeY, pipeW, pipeH, '#5599ff', '#080e1e');
+  // ── Blue pipe (LEFT)
+  drawPipe(pipeLX, pipeY, pipeW, pipeH, '#5599ff', '#080e1e');
   ctx.strokeStyle = '#224488'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(pipeRX, pipeY, pipeW, pipeH, 8); ctx.stroke();
-  ctx.fillStyle = '#1a2d8a';
-  ctx.beginPath(); ctx.roundRect(pipeRX, pipeY, pipeW, 24, [8,8,0,0]); ctx.fill();
-  ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ccdeff'; ctx.textAlign = 'center';
-  ctx.fillText('BLUE PIPE', pipeRX + pipeW/2, pipeY + 16);
-  const bby = pipeY + pipeH/2 - 26;
+  ctx.beginPath(); ctx.roundRect(pipeLX, pipeY, pipeW, pipeH, 8); ctx.stroke();
+  const bby = ly + lh/2 - 26;
   ctx.fillStyle = 'rgba(0,0,0,0.82)';
-  ctx.beginPath(); ctx.roundRect(pipeRX + 8, bby, pipeW - 16, 54, 5); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(pipeLX + 8, bby, pipeW - 16, 54, 5); ctx.fill();
   ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#5599ff';
-  ctx.fillText(`x = ${m.blueVal}`, pipeRX + pipeW/2, bby + 20);
+  ctx.fillText(`x = ${m.blueVal}`, pipeLX + pipeW/2, bby + 20);
   ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#99bbff';
-  ctx.fillText(EFFECT_META[m.blueEff].label, pipeRX + pipeW/2, bby + 36);
+  ctx.fillText(EFFECT_META[m.blueEff].label, pipeLX + pipeW/2, bby + 36);
   ctx.font = '9px monospace'; ctx.fillStyle = '#6688aa';
-  ctx.fillText(EFFECT_META[m.blueEff].desc, pipeRX + pipeW/2, bby + 50);
+  ctx.fillText(EFFECT_META[m.blueEff].desc, pipeLX + pipeW/2, bby + 50);
 
-  // ── Lock box: dark background
-  ctx.fillStyle = '#0e0e0e';
-  ctx.beginPath(); ctx.roundRect(lx, ly, lw, lh, 8); ctx.fill();
+  // ── Red pipe (RIGHT)
+  drawPipe(pipeRX, pipeY, pipeW, pipeH, '#ff5555', '#1e0808');
+  ctx.strokeStyle = '#882222'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(pipeRX, pipeY, pipeW, pipeH, 8); ctx.stroke();
+  const rby = ly + lh/2 - 26;
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.beginPath(); ctx.roundRect(pipeRX + 8, rby, pipeW - 16, 54, 5); ctx.fill();
+  ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#ff5555';
+  ctx.fillText(`x = ${m.redVal}`, pipeRX + pipeW/2, rby + 20);
+  ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ff9999';
+  ctx.fillText(EFFECT_META[m.redEff].label, pipeRX + pipeW/2, rby + 36);
+  ctx.font = '9px monospace'; ctx.fillStyle = '#aa6666';
+  ctx.fillText(EFFECT_META[m.redEff].desc, pipeRX + pipeW/2, rby + 50);
 
   // ── Keyhole shape containing BOTH conditions
-  const khCircR = 52;
-  const khStemW = 86;
-  const khStemH = 62;
+  const khCircR = 60;
+  const khStemW = 112;
+  const khStemH = 46;
   const khTopY  = ly + 6;
   const khCircCY = khTopY + khCircR;
   const khJAngle = Math.acos((khStemW/2) / khCircR);
   const khJY = khCircCY + khCircR * Math.sin(khJAngle);
   const khBotY = khTopY + khCircR * 2 + khStemH;
 
-  ctx.beginPath();
-  ctx.moveTo(slotCX - khStemW/2, khBotY);
-  ctx.lineTo(slotCX + khStemW/2, khBotY);
-  ctx.lineTo(slotCX + khStemW/2, khJY);
-  ctx.arc(slotCX, khCircCY, khCircR, khJAngle, Math.PI - khJAngle, true);
-  ctx.closePath();
-  ctx.fillStyle = '#080808'; ctx.fill();
+  // ── Gate/door shape — gold outline only
+  const gateW = 134, gateX = slotCX - gateW / 2;
+  const gateAH = gateW / 2;
 
-  ctx.strokeStyle = '#c47f00'; ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(slotCX - khStemW/2, khBotY);
-  ctx.lineTo(slotCX + khStemW/2, khBotY);
-  ctx.lineTo(slotCX + khStemW/2, khJY);
-  ctx.arc(slotCX, khCircCY, khCircR, khJAngle, Math.PI - khJAngle, true);
-  ctx.closePath();
-  ctx.stroke();
+  const gatePath = () => {
+    ctx.beginPath();
+    ctx.moveTo(gateX, khBotY);
+    ctx.lineTo(gateX, ly + gateAH);
+    ctx.arc(slotCX, ly + gateAH, gateAH, Math.PI, 0, false);
+    ctx.lineTo(gateX + gateW, khBotY);
+    ctx.closePath();
+  };
+
+  gatePath(); ctx.fillStyle = '#0e0e0e'; ctx.fill();
+  ctx.strokeStyle = '#c47f00'; ctx.lineWidth = 2.5; gatePath(); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,220,80,0.45)'; ctx.lineWidth = 1; gatePath(); ctx.stroke();
 
   // ── Row 1: inside circle
-  const slotW = 54, slotH = 28;
-  const labelGap = slotW/2 + 10;
+  const slotW = 62, slotH = 34;
+  const labelGap = slotW/2 + 12;
   const row1Y = khCircCY - slotH/2;
 
-  ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#999'; ctx.textAlign = 'right';
-  ctx.fillText('x', slotCX - labelGap, khCircCY + 5);
+  ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#999'; ctx.textAlign = 'right';
+  ctx.fillText('x', slotCX - labelGap, khCircCY + 6);
   ctx.textAlign = 'left';
-  ctx.fillText(`${m.n1}`, slotCX + labelGap, khCircCY + 5);
+  ctx.fillText(`${m.n1}`, slotCX + labelGap, khCircCY + 6);
 
   const s1sel = m.selectedSlot === 1;
   ctx.fillStyle = s1sel ? '#18183a' : '#111';
@@ -706,23 +1078,23 @@ function drawPuzzleUI(mx, my, mw, mh) {
   ctx.strokeStyle = s1sel ? '#aabbff' : m.slot1 ? '#c47f00' : '#444';
   ctx.lineWidth = s1sel ? 2 : 1.5;
   ctx.beginPath(); ctx.roundRect(slotCX - slotW/2, row1Y, slotW, slotH, 5); ctx.stroke();
-  ctx.font = 'bold 13px monospace'; ctx.fillStyle = m.slot1 ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
-  ctx.fillText(m.slot1 || '?', slotCX, khCircCY + 5);
+  ctx.font = 'bold 17px monospace'; ctx.fillStyle = m.slot1 ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
+  ctx.fillText(m.slot1 || '?', slotCX, khCircCY + 6);
   hz.slot1 = { x: slotCX - slotW/2 - 4, y: row1Y - 4, w: slotW + 8, h: slotH + 8 };
 
   // Connector label
   const connY = khJY + (khBotY - khJY) * 0.22;
-  ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#c47f00'; ctx.textAlign = 'center';
-  ctx.fillText(m.connector, slotCX, connY + 5);
+  ctx.font = 'bold 16px monospace'; ctx.fillStyle = '#c47f00'; ctx.textAlign = 'center';
+  ctx.fillText(m.connector, slotCX, connY + 6);
 
   // ── Row 2: inside stem
   const stemMidY = khJY + (khBotY - khJY) * 0.62;
   const row2Y = stemMidY - slotH/2;
 
-  ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#999'; ctx.textAlign = 'right';
-  ctx.fillText('x', slotCX - labelGap, stemMidY + 5);
+  ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#999'; ctx.textAlign = 'right';
+  ctx.fillText('x', slotCX - labelGap, stemMidY + 6);
   ctx.textAlign = 'left';
-  ctx.fillText(`${m.n2}`, slotCX + labelGap, stemMidY + 5);
+  ctx.fillText(`${m.n2}`, slotCX + labelGap, stemMidY + 6);
 
   const s2sel = m.selectedSlot === 2;
   ctx.fillStyle = s2sel ? '#18183a' : '#111';
@@ -730,15 +1102,15 @@ function drawPuzzleUI(mx, my, mw, mh) {
   ctx.strokeStyle = s2sel ? '#aabbff' : m.slot2 ? '#c47f00' : '#444';
   ctx.lineWidth = s2sel ? 2 : 1.5;
   ctx.beginPath(); ctx.roundRect(slotCX - slotW/2, row2Y, slotW, slotH, 5); ctx.stroke();
-  ctx.font = 'bold 13px monospace'; ctx.fillStyle = m.slot2 ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
-  ctx.fillText(m.slot2 || '?', slotCX, stemMidY + 5);
+  ctx.font = 'bold 17px monospace'; ctx.fillStyle = m.slot2 ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
+  ctx.fillText(m.slot2 || '?', slotCX, stemMidY + 6);
   hz.slot2 = { x: slotCX - slotW/2 - 4, y: row2Y - 4, w: slotW + 8, h: slotH + 8 };
 
   // ── Live evaluation hints
   if (m.slot1 || m.slot2) {
     const redOpen  = m.slot1 && m.slot2 ? evalPuzzle(m, m.redVal)  : null;
     const blueOpen = m.slot1 && m.slot2 ? evalPuzzle(m, m.blueVal) : null;
-    const badgeY = pipeY + pipeH - 26, badgeW = pipeW - 16, badgeH = 20;
+    const badgeY = ly + lh - 26, badgeW = pipeW - 16, badgeH = 20;
 
     const drawBadge = (bx, open) => {
       const pending = open === null;
@@ -754,14 +1126,14 @@ function drawPuzzleUI(mx, my, mw, mh) {
       ctx.fillText(txt, bx + 8 + badgeW / 2, badgeY + 13);
     };
 
-    drawBadge(pipeLX, redOpen);
-    drawBadge(pipeRX, blueOpen);
+    drawBadge(pipeLX, blueOpen);
+    drawBadge(pipeRX, redOpen);
   }
 
   // ── Operator buttons
-  const opBW=50, opBH=28, opGap=5;
+  const opBW=58, opBH=34, opGap=5;
   const rowW = 3*(opBW+opGap)-opGap;
-  const opBaseY = contentY + pipeH + 10;
+  const opBaseY = contentY + lh + 10;
   hz.ops = [];
 
   [OPERATORS.slice(0,3), OPERATORS.slice(3)].forEach((row, ri) => {
@@ -772,9 +1144,9 @@ function drawPuzzleUI(mx, my, mw, mh) {
       ctx.beginPath(); ctx.roundRect(ox, oy, opBW, opBH, 5); ctx.fill();
       ctx.strokeStyle = active ? '#c47f00' : '#2e2e2e'; ctx.lineWidth = active ? 1.5 : 1;
       ctx.beginPath(); ctx.roundRect(ox, oy, opBW, opBH, 5); ctx.stroke();
-      ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+      ctx.font = 'bold 15px monospace'; ctx.textAlign = 'center';
       ctx.fillStyle = active ? '#f0c040' : '#666';
-      ctx.fillText(op, ox + opBW/2, oy + 19);
+      ctx.fillText(op, ox + opBW/2, oy + 23);
       hz.ops.push({ x:ox, y:oy, w:opBW, h:opBH, op });
     });
   });
@@ -833,30 +1205,13 @@ function drawSlime(wx, wy) {
     }
   }
 
-  // Shadow
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  ctx.beginPath(); ctx.ellipse(1, R*0.78, R*0.62, R*0.18, 0, 0, Math.PI*2); ctx.fill();
-
   // Body
   ctx.fillStyle = '#3ecf3e';
   ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI*2); ctx.fill();
 
-  // Underside
-  ctx.fillStyle = 'rgba(0,0,0,0.12)';
-  ctx.beginPath(); ctx.ellipse(0, R*0.3, R*0.75, R*0.38, 0, 0, Math.PI); ctx.fill();
-
   // Sheen
   ctx.fillStyle = 'rgba(255,255,255,0.38)';
   ctx.beginPath(); ctx.ellipse(-R*.22, -R*.28, R*.36, R*.22, -0.4, 0, Math.PI*2); ctx.fill();
-
-  // Eyes
-  ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.arc(-R*.27, -R*.08, R*.20, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc( R*.27, -R*.08, R*.20, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(-R*.19, -R*.16, R*.08, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc( R*.35, -R*.16, R*.08, 0, Math.PI*2); ctx.fill();
 
   ctx.restore();
 }
@@ -919,7 +1274,7 @@ function drawMaze() {
           ctx.fillRect(px + Math.floor(w1*(CELL-8)), py+4, 3, CELL-8);
         }
 
-      } else if (warning && !hasEffect('FREEZE')) {
+      } else if (warning && !hasEffect('FREEZE') && cell !== 2) {
         const pulse = 0.10 + 0.08*Math.sin(frameTime*4.5);
         ctx.fillStyle = `rgba(60,130,220,${pulse})`;
         ctx.fillRect(px, py, CELL, CELL);
@@ -935,6 +1290,12 @@ function drawMaze() {
         ctx.strokeStyle = `rgba(255,210,60,${sh})`;
         ctx.lineWidth = 1.5;
         ctx.strokeRect(px+1, py+1, CELL-2, CELL-2);
+        // Warning: subtle blue tint on top of still-visible gate
+        if (warning && !hasEffect('FREEZE')) {
+          const pulse = 0.08 + 0.06*Math.sin(frameTime*4.5);
+          ctx.fillStyle = `rgba(60,130,220,${pulse})`;
+          ctx.fillRect(px, py, CELL, CELL);
+        }
         // Flooded but not yet solid — blue water overlay on top of the gate
         if (flooded) {
           const w1 = 0.5 + 0.5*Math.sin(frameTime*2.0 + col*.8 + row*.6);
@@ -944,13 +1305,20 @@ function drawMaze() {
 
       } else if (cell === 9) {
         const pulse = 0.5 + 0.5*Math.sin(frameTime*2.5);
-        ctx.fillStyle = '#e84422';
+        ctx.fillStyle = flooded ? '#1a3060' : '#e84422';
         ctx.fillRect(px, py, CELL, CELL);
-        ctx.fillStyle = `rgba(255,255,255,${0.15+pulse*.2})`;
-        ctx.beginPath(); ctx.arc(px+CELL/2, py+CELL/2, CELL*.38+pulse*2.5, 0, Math.PI*2); ctx.fill();
+        if (flooded) {
+          // Water ripple over exit
+          const w1 = 0.5 + 0.5*Math.sin(frameTime*2.0 + col*.8 + row*.6);
+          ctx.fillStyle = `rgba(30,100,210,${0.35 + w1*0.15})`;
+          ctx.fillRect(px, py, CELL, CELL);
+        } else {
+          ctx.fillStyle = `rgba(255,255,255,${0.15+pulse*.2})`;
+          ctx.beginPath(); ctx.arc(px+CELL/2, py+CELL/2, CELL*.38+pulse*2.5, 0, Math.PI*2); ctx.fill();
+        }
         ctx.font = `bold ${Math.floor(CELL*.52)}px sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = flooded ? `rgba(255,255,255,${0.4+pulse*0.3})` : '#fff';
         ctx.fillText('★', px+CELL/2, py+CELL/2+7);
       }
 
@@ -994,43 +1362,49 @@ function drawMaze() {
 
 // ─── DRAW: HUD ────────────────────────────────────────────────────────────────
 function drawHUD() {
-  const frac     = Math.min(1, Math.max(0, currentFloodDepth / maxFloodDepth));
-  const barColor = frac < .4 ? '#3a9eea' : frac < .7 ? '#1e78d4' : '#0e50b8';
+  // Compute real flood % = flooded open cells / total floodable open cells
+  const totalFloodable = Object.keys(floodDepth).length || 1;
+  const floodedCount   = Object.values(floodDepth).filter(d => d <= currentFloodDepth).length;
+  const floodPct       = Math.min(1, Math.max(0, floodedCount / totalFloodable));
+  const pctLabel       = `${Math.round(floodPct * 100)}% flooded`;
+
+  const barColor = floodPct < .4 ? '#3a9eea' : floodPct < .7 ? '#1e78d4' : '#0e50b8';
 
   const bx=W/2-110, by=13, bw=220, bh=9;
   ctx.fillStyle = 'rgba(0,0,0,0.18)';
   ctx.beginPath(); ctx.roundRect(bx-1,by-1,bw+2,bh+2,4); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.12)';
   ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,3); ctx.fill();
-  if (frac > 0) {
+  if (floodPct > 0) {
     ctx.fillStyle = barColor;
-    ctx.beginPath(); ctx.roundRect(bx,by,bw*frac,bh,3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(bx,by,bw*floodPct,bh,3); ctx.fill();
   }
 
-  ctx.font = '10px monospace'; ctx.textAlign = 'left';
-  ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillText('flood',bx,by-2);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillText('★ center',bx+bw,by-2);
+  ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(60,140,230,0.85)'; ctx.fillText(pctLabel, W/2, by-2);
   ctx.textAlign = 'center';
 
-  if (currentFloodDepth < 0) {
-    const secsLeft = Math.ceil(-currentFloodDepth / FLOOD_RATE_BASE);
-    ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillText(`flood in ${secsLeft}s  ·  reach the ★`, W/2, by+bh+15);
+  if (!floodStarted) {
+    ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(60,140,230,0.6)';
+    ctx.fillText(`reach the ★ on the edge`, W/2, by+bh+15);
+  } else if (currentFloodDepth < 0) {
+    const secsLeft = Math.ceil(-currentFloodDepth / floodBase());
+    ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(60,140,230,0.9)';
+    ctx.fillText(`flood in ${secsLeft}s  ·  reach the ★ on the edge`, W/2, by+bh+15);
   } else {
     // Timer until the next depth layer floods
-    const elapsed = currentFloodDepth / FLOOD_RATE_BASE;
+    const elapsed = currentFloodDepth / floodBase();
     const rampFrac = Math.min(1, elapsed / 45);
-    const currentRate = FLOOD_RATE_BASE + (FLOOD_RATE_MAX - FLOOD_RATE_BASE) * rampFrac;
+    const currentRate = floodBase() + (floodMax() - floodBase()) * rampFrac;
     const depthToNext = (Math.floor(currentFloodDepth) + 1) - currentFloodDepth;
     const secsToNext = Math.ceil(depthToNext / currentRate);
     const urgentColor = secsToNext <= 1 ? '255,120,80' : secsToNext <= 3 ? '120,180,255' : '80,150,220';
     ctx.font = '11px monospace';
     ctx.fillStyle = `rgba(${urgentColor},0.75)`;
-    ctx.fillText(`next block in ${secsToNext}s`, W/2, by+bh+15);
+    ctx.fillText(`next block in ${secsToNext}s  ·  reach the ★ on the edge`, W/2, by+bh+15);
   }
 
-  if (frac > 0.6) {
+  if (floodPct > 0.6) {
     const p = (Math.sin(frameTime*3.5)+1)/2;
     ctx.fillStyle = `rgba(30,80,200,${0.02+p*.04})`;
     ctx.fillRect(0,0,W,H);
@@ -1080,12 +1454,12 @@ function softReset() {
   // Restore all gates that were opened during this run
   for (const [c, r] of savedGates) MAP[r][c] = 2;
   computeFlood();
-  player.x = 1.5; player.y = 1.5;
-  currentFloodDepth = -(FLOOD_RATE * 12);
+  player.x = CX+0.5; player.y = CY+0.5;
+  currentFloodDepth = -(floodBase() * 3);
   gameWon = gameLost = false;
   gateModal = null;
   sparks.length = 0;
-  moving = false; walkTimer = 0;
+  moving = false; walkTimer = 0; floodStarted = false;
   activeEffects = [];
   smokeGates = {};
   gatePuzzles = {};
@@ -1100,6 +1474,14 @@ function reset() {
 
 document.getElementById('restart-btn').addEventListener('click', softReset);
 document.getElementById('newmaze-btn').addEventListener('click', reset);
+document.getElementById('cheatsheet-btn').addEventListener('click', () => { showCheatsheet = !showCheatsheet; });
+const toggleMode = () => { hardMode = !hardMode; setToggle(); reset(); };
+document.getElementById('toggle-compare').addEventListener('click', toggleMode);
+document.getElementById('toggle-gates').addEventListener('click',   toggleMode);
+function setToggle() {
+  document.getElementById('toggle-compare').classList.toggle('active', !hardMode);
+  document.getElementById('toggle-gates').classList.toggle('active', hardMode);
+}
 
 // ─── LOOP ────────────────────────────────────────────────────────────────────
 let prevTs = null;
@@ -1107,14 +1489,12 @@ function loop(ts) {
   const dt = prevTs !== null ? Math.min(0.05, (ts-prevTs)/1000) : 0;
   prevTs = ts; frameTime += dt;
 
-  if ((keys['r']||keys['R']) && (gameWon||gameLost)) { gameWon ? softReset() : reset(); }
 
   if (!gameWon && !gameLost) {
-    if (!hasEffect('FREEZE')) {
-      // Rate ramps from FLOOD_RATE_BASE to FLOOD_RATE_MAX over ~45 seconds of active flooding
-      const elapsed = Math.max(0, currentFloodDepth) / FLOOD_RATE_BASE;
+    if (floodStarted && !showIntro && !hasEffect('FREEZE')) {
+      const elapsed = Math.max(0, currentFloodDepth) / floodBase();
       const rampFrac = Math.min(1, elapsed / 45);
-      const rate = FLOOD_RATE_BASE + (FLOOD_RATE_MAX - FLOOD_RATE_BASE) * rampFrac;
+      const rate = floodBase() + (floodMax() - floodBase()) * rampFrac;
       currentFloodDepth += rate * dt;
     }
     updatePlayer(dt);
@@ -1140,9 +1520,11 @@ function loop(ts) {
     ctx.fillRect(0, 0, W, H);
   }
   drawHUD();
-  if (gateModal)  drawGateModal();
-  if (gameWon)    drawEndScreen(true);
-  if (gameLost)   drawEndScreen(false);
+  if (gateModal)       drawGateModal();
+  if (showCheatsheet)  drawCheatsheet();
+  if (gameWon)         drawEndScreen(true);
+  if (gameLost)        drawEndScreen(false);
+  if (showIntro)       drawIntro();
 
   requestAnimationFrame(loop);
 }
