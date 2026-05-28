@@ -248,12 +248,10 @@ let savedGates = MAP.flatMap((row, r) => row.map((v, c) => v === 2 ? [c, r] : nu
 // ─── FLOOD ───────────────────────────────────────────────────────────────────
 const FLOOD_RATE_BASE = 0.333;  // cells/sec (~3s per block) — normal mode
 const FLOOD_RATE_MAX  = 1.5;    // cells/sec at peak (~0.67s per block) — normal mode
-const FLOOD_RATE = FLOOD_RATE_BASE;
 const floodBase = () => hardMode ? 0.25 : FLOOD_RATE_BASE; // hard: ~4s/block
 const floodMax  = () => hardMode ? 0.67 : FLOOD_RATE_MAX;  // hard: ~1.5s/block at peak
 let floodDepth = {};
-let maxFloodDepth = 1;
-let currentFloodDepth = -(FLOOD_RATE * 3);
+let currentFloodDepth = -(FLOOD_RATE_BASE * 3);
 
 const floodPassable = v => v === 0 || v === 2; // water flows through open cells and gold gates
 
@@ -265,17 +263,16 @@ function computeFlood() {
     if (floodPassable(MAP[r][c]) && !(k in floodDepth)) { floodDepth[k]=0; queue.push(c,r,0); }
   };
   add(CX, CY); // flood rises from center outward
-  let i = 0, mx = 0;
+  let i = 0;
   while (i < queue.length) {
     const col = queue[i++], row = queue[i++], d = queue[i++];
     for (const [dc,dr] of [[0,-1],[0,1],[-1,0],[1,0]]) {
       const nc=col+dc, nr=row+dr, k=`${nc},${nr}`;
       if (nc>=0&&nc<MW&&nr>=0&&nr<MH && !(k in floodDepth) && floodPassable(MAP[nr][nc])) {
-        floodDepth[k]=d+1; mx=Math.max(mx,d+1); queue.push(nc,nr,d+1);
+        floodDepth[k]=d+1; queue.push(nc,nr,d+1);
       }
     }
   }
-  maxFloodDepth = mx || 1;
 }
 computeFlood();
 
@@ -317,15 +314,10 @@ function addSmokeGate(col, row, result, redEff, blueEff) {
 const OPERATORS = ['<', '>', '==', '!=', '<=', '>='];
 let gatePuzzles = {};
 
-function seededRng(seed) {
-  let s = seed >>> 0;
-  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-}
-
 let hardMode = false;
 let showCheatsheet = false;
 let showIntro = true;
-let introPage = 0; // 0 = story, 1 = how to play
+let introPage = 0; // 0 = story, 1 = how to play, 2 = puzzle diagram
 
 const LOGIC_GATES = ['AND','OR','XOR','NAND','NOR','XNOR'];
 const GATE_INFO = [
@@ -355,7 +347,9 @@ function makePuzzle() {
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
   const connPool = hardMode ? LOGIC_GATES : ['&&','||'];
 
-  const canOnlyBlue = (connector, n1, n2, redVal, blueVal) => {
+  // Returns true if there's at least one operator combo where blue passes but red doesn't
+  // — guarantees the puzzle has a blue-only winning solution
+  const hasBlueOnlySolution = (connector, n1, n2, redVal, blueVal) => {
     for (const op1 of OPERATORS) for (const op2 of OPERATORS) {
       const r1=evalOp(redVal,op1,n1),  r2=evalOp(redVal,op2,n2);
       const b1=evalOp(blueVal,op1,n1), b2=evalOp(blueVal,op2,n2);
@@ -370,7 +364,7 @@ function makePuzzle() {
     let n2; do { n2 = pick(numPool); } while (n2 === n1);
     let redVal = pick(valPool), blueVal;
     do { blueVal = pick(valPool); } while (blueVal === redVal);
-    if (!canOnlyBlue(connector, n1, n2, redVal, blueVal)) continue;
+    if (!hasBlueOnlySolution(connector, n1, n2, redVal, blueVal)) continue;
     return { connector, n1, n2, redVal, blueVal, redEff: pick(RED_EFFECTS), blueEff: pick(BLUE_EFFECTS) };
   }
   const fc = hardMode ? 'XOR' : '||';
@@ -793,7 +787,7 @@ const passable = (x, y) => {
   const mc = Math.floor(x), mr = Math.floor(y);
   if (mc<0||mc>=MW||mr<0||mr>=MH) return false;
   const cell = MAP[mr][mc];
-  const floodedGate = cell === 2 && isFlooded(mc, mr); // water covers the gate — physically passable
+  const floodedGate = cell === 2 && isFlooded(mc, mr); // flooded gate: not a wall, but still blocks movement unless WATERPROOF
   if (cell !== 0 && cell !== 9 && !floodedGate) return false;
   if (isFlooded(mc, mr) && !hasEffect('WATERPROOF')) return false;
   return true;
@@ -1494,7 +1488,7 @@ function drawHUD() {
 
 // ─── DRAW: END SCREEN ────────────────────────────────────────────────────────
 function drawEndScreen(won) {
-  // Hopping ball drawn before the overlay — subtle, no glow, clipped below HUD
+  // Hopping ball drawn before the overlay — subtle, no glow
   if (won && winBall) {
     const hopT = Math.pow(Math.abs(Math.sin(winBall.t * Math.PI * 3.0)), 0.5);
     const yOff  = -34 * hopT;
