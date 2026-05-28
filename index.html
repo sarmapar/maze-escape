@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Slime Maze</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1a1a;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,0.5); }
+#hint { color: #555; font: 11px monospace; margin-top: 6px; letter-spacing: 0.3px; }
+#restart-btn, #newmaze-btn {
+  margin-top: 6px;
+  background: none;
+  border: 1px solid #444;
+  color: #666;
+  font: 11px monospace;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+}
+#restart-btn:hover, #newmaze-btn:hover { border-color: #888; color: #aaa; }
+#newmaze-btn { margin-left: 6px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">WASD / arrow keys &nbsp;·&nbsp; Enter or click golden gates &nbsp;·&nbsp; reach the ★ in the center!</div>
+<button id="restart-btn">restart (keep maze)</button>
+<button id="newmaze-btn">new maze</button>
+<script>
+'use strict';
+
+// ─── CANVAS ──────────────────────────────────────────────────────────────────
+const W = 800, H = 520;
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+canvas.width  = W;
+canvas.height = H;
+
+// ─── MAP ─────────────────────────────────────────────────────────────────────
+const MW = 25, MH = 25, CELL = 38;
+const CX = 13, CY = 13;
+
+// Spiral-biased maze: DFS prefers clockwise rotation around center at the edges,
+// becoming random near the center — gives a spiral outer structure with maze-like core.
+function buildSpiralMaze(w, h, seed) {
+  const g = Array.from({ length: h }, () => new Array(w).fill(1));
+  let s = seed >>> 0;
+  const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+
+  const rw = (w - 1) / 2, rh = (h - 1) / 2; // room grid: 16×16
+  const visited = Array.from({length: rh}, () => new Array(rw).fill(false));
+  const crx = (rw - 1) / 2, cry = (rh - 1) / 2; // room-coord center (7.5, 7.5)
+  const maxD = Math.sqrt(crx * crx + cry * cry);
+
+  function carve(r, c) {
+    visited[r][c] = true;
+    g[2*r+1][2*c+1] = 0;
+
+    const dist = Math.sqrt((r-cry)**2 + (c-crx)**2) / maxD;
+    // Normalize cwAlign to [-1,1] so spiralStr is meaningful regardless of distance
+    const fx = c - crx, fy = r - cry;
+    const mag = Math.sqrt(fx*fx + fy*fy) || 1;
+    const spiralStr = (1 - dist) * 2.8; // strong CW spiral near center, pure random at edges
+
+    const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+    const scored = dirs
+      .filter(([dr, dc]) => {
+        const nr = r+dr, nc = c+dc;
+        return nr>=0 && nr<rh && nc>=0 && nc<rw && !visited[nr][nc];
+      })
+      .map(([dr, dc]) => {
+        const cwAlign = (dc * fy + dr * (-fx)) / mag; // normalized dot with CW tangent
+        const weight = Math.exp(cwAlign * spiralStr) * (0.5 + rnd());
+        return { dr, dc, weight };
+      })
+      .sort((a, b) => b.weight - a.weight);
+
+    for (const { dr, dc } of scored) {
+      const nr = r+dr, nc = c+dc;
+      if (!visited[nr][nc]) {
+        g[r+nr+1][c+nc+1] = 0; // open wall between (r,c) and (r+dr, c+dc)
+        carve(nr, nc);
+      }
+    }
+  }
+
+  carve(0, 0); // start from top-left room — pure spanning tree, no loops = max dead ends
+  return g;
+}
+
+// BFS shortest path through open cells; returns array of [x,y] grid coords
+function bfsPath(map, w, h, sx, sy, ex, ey) {
+  const prev = new Map();
+  prev.set(`${sx},${sy}`, null);
+  const queue = [[sx, sy]];
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  let found = false;
+  while (queue.length && !found) {
+    const [x, y] = queue.shift();
+    for (const [dx, dy] of dirs) {
+      const nx = x+dx, ny = y+dy;
+      const key = `${nx},${ny}`;
+      if (nx>=0 && nx<w && ny>=0 && ny<h && !prev.has(key) && map[ny][nx] !== 1) {
+        prev.set(key, [x, y]);
+        if (nx===ex && ny===ey) { found = true; break; }
+        queue.push([nx, ny]);
+      }
+    }
+  }
+  const path = [];
+  let key = `${ex},${ey}`;
+  while (key) {
+    const [x, y] = key.split(',').map(Number);
+    path.unshift([x, y]);
+    const p = prev.get(key);
+    key = p ? `${p[0]},${p[1]}` : null;
+  }
+  return path;
+}
+
+function placeGoldenGates(map, w, h, count, seed) {
+  const cands = [];
+  for (let y = 1; y < h-1; y++) for (let x = 1; x < w-1; x++) {
+    if (map[y][x] !== 1) continue;
+    const hg = map[y][x-1]===0 && map[y][x+1]===0;
+    const vg = map[y-1][x]===0 && map[y+1][x]===0;
+    const nearStart  = x<=3 && y<=3;
+    const nearCenter = Math.abs(x-CX)<=2 && Math.abs(y-CY)<=2;
+    if ((hg||vg) && !nearStart && !nearCenter) cands.push([x,y]);
+  }
+  // Fully shuffle for even spread across the whole maze
+  let s = seed >>> 0;
+  const ri = n => { s = (Math.imul(s,1664525)+1013904223)>>>0; return (s>>>0)%n; };
+  for (let i = cands.length-1; i > 0; i--) { const j=ri(i+1); [cands[i],cands[j]]=[cands[j],cands[i]]; }
+  let placed = 0;
+  for (let i = 0; i < cands.length && placed < count; i++) {
+    const [gx, gy] = cands[i];
+    // Skip if any orthogonal neighbor is already a gate
+    const hasNeighborGate = [[1,0],[-1,0],[0,1],[0,-1]].some(
+      ([dx,dy]) => map[gy+dy]?.[gx+dx] === 2
+    );
+    if (!hasNeighborGate) { map[gy][gx] = 2; placed++; }
+  }
+}
+
+let runSeed = Date.now() >>> 0;
+
+function makeMap() {
+  const s = runSeed;
+  const m = buildSpiralMaze(MW, MH, s);
+
+  // Find the unique path from start to center (tree has exactly one path)
+  const path = bfsPath(m, MW, MH, 1, 1, CX, CY);
+
+  // Only place mandatory gates on the inner 55% of the path (closer to center)
+  // so the player can explore freely before hitting a gate checkpoint
+  const passages = path.filter(([x, y]) => !((x & 1) && (y & 1)) && x > 1 && y > 1);
+  const innerPassages = passages.slice(Math.floor(passages.length * 0.45));
+  const mandatoryGates = 4;
+  const step = Math.max(1, Math.floor(innerPassages.length / (mandatoryGates + 1)));
+  for (let i = 1; i <= mandatoryGates && i * step < innerPassages.length; i++) {
+    const [gx, gy] = innerPassages[i * step];
+    const adj = [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) => m[gy+dy]?.[gx+dx] === 2);
+    if (!adj) m[gy][gx] = 2;
+  }
+
+  // Optional gates biased toward center
+  placeGoldenGates(m, MW, MH, 28, s ^ 0xBEEF1234);
+  m[CY][CX] = 9;
+  return m;
+}
+let MAP = makeMap();
+let savedGates = MAP.flatMap((row, r) => row.map((v, c) => v === 2 ? [c, r] : null).filter(Boolean));
+
+// ─── FLOOD ───────────────────────────────────────────────────────────────────
+const FLOOD_RATE_BASE = 0.18;  // cells/sec at start
+const FLOOD_RATE_MAX  = 0.55;  // cells/sec at peak
+const FLOOD_RATE = FLOOD_RATE_BASE; // used for initial delay calc only
+let floodDepth = {};
+let maxFloodDepth = 1;
+let currentFloodDepth = -(FLOOD_RATE * 12);
+
+const floodPassable = v => v === 0 || v === 2; // water flows through open cells and gold gates
+
+function computeFlood() {
+  floodDepth = {};
+  const queue = [];
+  const add = (c, r) => {
+    const k = `${c},${r}`;
+    if (floodPassable(MAP[r][c]) && !(k in floodDepth)) { floodDepth[k]=0; queue.push(c,r,0); }
+  };
+  for (let c = 0; c < MW; c++) { add(c,1); add(c,MH-2); }
+  for (let r = 2; r < MH-2; r++) { add(1,r); add(MW-2,r); }
+  let i = 0, mx = 0;
+  while (i < queue.length) {
+    const col = queue[i++], row = queue[i++], d = queue[i++];
+    for (const [dc,dr] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+      const nc=col+dc, nr=row+dr, k=`${nc},${nr}`;
+      if (nc>=0&&nc<MW&&nr>=0&&nr<MH && !(k in floodDepth) && floodPassable(MAP[nr][nc])) {
+        floodDepth[k]=d+1; mx=Math.max(mx,d+1); queue.push(nc,nr,d+1);
+      }
+    }
+  }
+  maxFloodDepth = mx || 1;
+}
+computeFlood();
+
+const isFlooded = (col, row) => {
+  const d = floodDepth[`${col},${row}`];
+  return d !== undefined && d <= currentFloodDepth;
+};
+
+// ─── EFFECTS ─────────────────────────────────────────────────────────────────
+const EFFECT_META = {
+  SLOW:       { label:'SLOW',        color:'#ff4444', pipe:'red',  desc:'half speed'         },
+  REVERSE:    { label:'REVERSED',    color:'#ff6644', pipe:'red',  desc:'controls flipped'   },
+  DIZZY:      { label:'DARKNESS',    color:'#ff9944', pipe:'red',  desc:'darkness falls'     },
+  SPEED:      { label:'SPEED+',      color:'#44aaff', pipe:'blue', desc:'double speed'       },
+  WATERPROOF: { label:'WATERPROOF',  color:'#44ddff', pipe:'blue', desc:'flood immunity'     },
+  FREEZE:     { label:'FREEZE',      color:'#aaddff', pipe:'blue', desc:'flood pauses'       },
+};
+const RED_EFFECTS  = ['SLOW','REVERSE','DIZZY'];
+const BLUE_EFFECTS = ['SPEED','WATERPROOF','FREEZE'];
+
+let activeEffects = []; // {type, endTime}
+
+function hasEffect(type) {
+  return activeEffects.some(e => e.type===type && e.endTime > frameTime);
+}
+function applyEffect(type, dur=10) {
+  activeEffects = activeEffects.filter(e => e.type !== type);
+  activeEffects.push({ type, endTime: frameTime + dur });
+}
+
+// ─── SMOKE GATES ─────────────────────────────────────────────────────────────
+let smokeGates = {}; // "col,row" → {result:'red'|'blue'|'both', endTime}
+
+function addSmokeGate(col, row, result, redEff, blueEff) {
+  smokeGates[`${col},${row}`] = { result, redEff, blueEff, spawnTime: performance.now() };
+}
+
+// ─── PUZZLE ──────────────────────────────────────────────────────────────────
+const OPERATORS = ['<', '>', '==', '!=', '<=', '>='];
+let gatePuzzles = {};
+
+function seededRng(seed) {
+  let s = seed >>> 0;
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+function makePuzzle() {
+  const numPool = [2,3,4,5,6,7,8,10,12,15,18,20,25,30];
+  const valPool = [1,2,3,4,5,6,8,10,12,15,18,20,25,30,35];
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+  const canOnlyBlue = (connector, n1, n2, redVal, blueVal) => {
+    for (const op1 of OPERATORS) for (const op2 of OPERATORS) {
+      const r1=evalOp(redVal,op1,n1),  r2=evalOp(redVal,op2,n2);
+      const b1=evalOp(blueVal,op1,n1), b2=evalOp(blueVal,op2,n2);
+      const ro = connector==='&&' ? r1&&r2 : r1||r2;
+      const bo = connector==='&&' ? b1&&b2 : b1||b2;
+      if (bo && !ro) return true;
+    }
+    return false;
+  };
+
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const connector = Math.random() < 0.5 ? '&&' : '||';
+    const n1 = pick(numPool);
+    let n2; do { n2 = pick(numPool); } while (n2 === n1);
+    let redVal = pick(valPool), blueVal;
+    do { blueVal = pick(valPool); } while (blueVal === redVal);
+    if (!canOnlyBlue(connector, n1, n2, redVal, blueVal)) continue;
+    return { connector, n1, n2, redVal, blueVal, redEff: pick(RED_EFFECTS), blueEff: pick(BLUE_EFFECTS) };
+  }
+  // guaranteed fallback
+  return { connector:'||', n1:5, n2:10, redVal:3, blueVal:12, redEff:pick(RED_EFFECTS), blueEff:pick(BLUE_EFFECTS) };
+}
+
+function evalOp(x, op, n) {
+  switch(op) {
+    case '<':  return x < n;
+    case '>':  return x > n;
+    case '==': return x === n;
+    case '!=': return x !== n;
+    case '<=': return x <= n;
+    case '>=': return x >= n;
+  }
+  return false;
+}
+
+function evalPuzzle(pz, val) {
+  if (!pz.slot1 || !pz.slot2) return false;
+  const r1 = evalOp(val, pz.slot1, pz.n1);
+  const r2 = evalOp(val, pz.slot2, pz.n2);
+  return pz.connector === '&&' ? r1 && r2 : r1 || r2;
+}
+
+// ─── PLAYER ──────────────────────────────────────────────────────────────────
+const player  = { x: 1.5, y: 1.5, facing: [1, 0] }; // [dc, dr]
+const SPEED   = 0.07;
+const RADIUS  = 0.3;
+let moving    = false;
+let walkTimer = 0;
+
+// ─── INPUT ───────────────────────────────────────────────────────────────────
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  if (e.key === 'Enter') {
+    if (gateModal) {
+      if (gateModal.phase === 'done') { gateModal = null; return; }
+      if (gateModal.slot1 && gateModal.slot2 && gateModal.hitZones.activate) {
+        const hz = gateModal.hitZones.activate;
+        handleModalClick(hz.x + hz.w/2, hz.y + hz.h/2);
+      }
+      return;
+    }
+    if (gameWon) { reset(); return; }
+    if (gameLost) { softReset(); return; }
+    const mc = Math.floor(player.x), mr = Math.floor(player.y);
+    const [fdc, fdr] = player.facing;
+    // Check facing cell first, then other adjacent cells as fallback
+    const order = [[fdc, fdr], [0,0], [-fdc,-fdr], [fdr,-fdc], [-fdr,fdc]];
+    for (const [dc, dr] of order) {
+      const c = mc+dc, r = mr+dr;
+      if (c>=0&&c<MW&&r>=0&&r<MH && MAP[r][c]===2) { openGateModal(c, r); break; }
+    }
+  }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  const {col,row} = canvasToCell(
+    (e.clientX-r.left)*(W/r.width),
+    (e.clientY-r.top)*(H/r.height)
+  );
+  canvas.style.cursor = (row>=0&&row<MH&&col>=0&&col<MW&&MAP[row][col]===2) ? 'pointer' : 'default';
+});
+
+// ─── COORDS ──────────────────────────────────────────────────────────────────
+const camOff       = () => ({ cx: player.x*CELL - W/2, cy: player.y*CELL - H/2 });
+const canvasToCell = (px, py) => {
+  const {cx,cy} = camOff();
+  return { col: Math.floor((px+cx)/CELL), row: Math.floor((py+cy)/CELL) };
+};
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let gameWon = false, gameLost = false, frameTime = 0;
+let gateModal = null;
+const sparks  = [];
+
+// ─── GATE MODAL LOGIC ────────────────────────────────────────────────────────
+function openGateModal(col, row) {
+  const k = `${col},${row}`;
+  const pz = makePuzzle();
+  gateModal = {
+    col, row,
+    connector: pz.connector, n1: pz.n1, n2: pz.n2,
+    redVal: pz.redVal, blueVal: pz.blueVal,
+    redEff: pz.redEff, blueEff: pz.blueEff,
+    slot1: null, slot2: null, selectedSlot: 1,
+    phase: 'puzzle', result: null,
+    hitZones: {}
+  };
+}
+
+function inBox(x, y, b) { return b && x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h; }
+
+function handleModalClick(cx, cy) {
+  const m = gateModal;
+  if (m.phase === 'done') { gateModal = null; return; }
+  const hz = m.hitZones;
+
+  if (inBox(cx, cy, hz.slot1)) {
+    if (m.selectedSlot === 1 && m.slot1) { m.slot1 = null; }
+    else { m.selectedSlot = 1; }
+    return;
+  }
+  if (inBox(cx, cy, hz.slot2)) {
+    if (m.selectedSlot === 2 && m.slot2) { m.slot2 = null; }
+    else { m.selectedSlot = 2; }
+    return;
+  }
+  if (hz.ops) {
+    for (const o of hz.ops) {
+      if (inBox(cx, cy, o)) {
+        if (m.selectedSlot === 1) { m.slot1 = o.op; if (!m.slot2) m.selectedSlot = 2; }
+        else                      { m.slot2 = o.op; if (!m.slot1) m.selectedSlot = 1; }
+        return;
+      }
+    }
+  }
+  if (inBox(cx, cy, hz.activate) && m.slot1 && m.slot2) {
+    const redOpen  = evalPuzzle(m, m.redVal);
+    const blueOpen = evalPuzzle(m, m.blueVal);
+    m.result = redOpen && blueOpen ? 'both' : blueOpen ? 'blue' : redOpen ? 'red' : 'none';
+    resolveGate();
+  }
+}
+
+function resolveGate() {
+  const m = gateModal;
+  if (m.result !== 'none') {
+    MAP[m.row][m.col] = 0;
+    computeFlood();
+    addSmokeGate(m.col, m.row, m.result, m.redEff, m.blueEff);
+    for (let i = 0; i < 12; i++) sparks.push({ col:m.col, row:m.row, p:0, angle:(i/12)*Math.PI*2 });
+  }
+  gateModal.phase = 'done';
+}
+
+// ─── CLICK ───────────────────────────────────────────────────────────────────
+canvas.addEventListener('click', e => {
+  if (gameWon || gameLost) return;
+  const r  = canvas.getBoundingClientRect();
+  const cx = (e.clientX-r.left)*(W/r.width);
+  const cy = (e.clientY-r.top)*(H/r.height);
+  if (gateModal) { handleModalClick(cx, cy); return; }
+  const {col, row} = canvasToCell(cx, cy);
+  if (row>=0&&row<MH&&col>=0&&col<MW&&MAP[row][col]===2) openGateModal(col, row);
+});
+
+// ─── COLLISION ───────────────────────────────────────────────────────────────
+const passable = (x, y) => {
+  const mc = Math.floor(x), mr = Math.floor(y);
+  if (mc<0||mc>=MW||mr<0||mr>=MH) return false;
+  const cell = MAP[mr][mc];
+  if (cell !== 0 && cell !== 9) return false;
+  if (isFlooded(mc, mr) && !hasEffect('WATERPROOF')) return false;
+  return true;
+};
+
+// ─── MOVEMENT ────────────────────────────────────────────────────────────────
+function updatePlayer(dt) {
+  if (gateModal||gameWon||gameLost) return;
+
+  const rev = hasEffect('REVERSE') ? -1 : 1;
+  let dx = 0, dy = 0;
+  if (keys['ArrowUp']   ||keys['w']||keys['W']) dy -= rev;
+  if (keys['ArrowDown'] ||keys['s']||keys['S']) dy += rev;
+  if (keys['ArrowLeft'] ||keys['a']||keys['A']) dx -= rev;
+  if (keys['ArrowRight']||keys['d']||keys['D']) dx += rev;
+
+  const spd = hasEffect('SLOW') ? SPEED*0.45 : hasEffect('SPEED') ? SPEED*1.85 : SPEED;
+  moving = dx!==0||dy!==0;
+  if (moving) {
+    walkTimer += dt;
+    // Track facing: prefer the axis with stronger input; diagonal → last single axis wins
+    if (dx !== 0 && dy === 0) player.facing = [Math.sign(dx * rev), 0];
+    else if (dy !== 0 && dx === 0) player.facing = [0, Math.sign(dy * rev)];
+  }
+  if (dx&&dy) { dx*=0.707; dy*=0.707; }
+  dx *= spd; dy *= spd;
+
+  const r = RADIUS;
+  if (dx) { const nx=player.x+dx, ex=dx>0?nx+r:nx-r; if (passable(ex,player.y+r)&&passable(ex,player.y-r)) player.x=nx; }
+  if (dy) { const ny=player.y+dy, ey=dy>0?ny+r:ny-r; if (passable(player.x+r,ey)&&passable(player.x-r,ey)) player.y=ny; }
+
+  // Snap toward cell-center on the perpendicular axis so openings are easy to enter
+  if (moving) {
+    const snapSpd = spd * 2.2;
+    if (dx && !dy) {
+      const tgt = Math.floor(player.y) + 0.5;
+      const diff = tgt - player.y;
+      player.y += Math.sign(diff) * Math.min(Math.abs(diff), snapSpd);
+    }
+    if (dy && !dx) {
+      const tgt = Math.floor(player.x) + 0.5;
+      const diff = tgt - player.x;
+      player.x += Math.sign(diff) * Math.min(Math.abs(diff), snapSpd);
+    }
+  }
+
+  const mc=Math.floor(player.x), mr=Math.floor(player.y);
+  if (MAP[mr]?.[mc] === 9) gameWon = true;
+  if (!hasEffect('WATERPROOF') && isFlooded(mc, mr)) gameLost = true;
+
+  // Walk through smoke: apply its effect then clear it
+  const sk = `${mc},${mr}`;
+  if (smokeGates[sk]) {
+    const sg = smokeGates[sk];
+    if (sg.result === 'red'  || sg.result === 'both') applyEffect(sg.redEff);
+    if (sg.result === 'blue' || sg.result === 'both') applyEffect(sg.blueEff);
+    delete smokeGates[sk];
+  }
+}
+
+// ─── DRAW: PIPE FOG ──────────────────────────────────────────────────────────
+function drawPipe(x, y, w, h, fogColor, bgColor) {
+  ctx.fillStyle = bgColor;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.fill();
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.clip();
+  for (let i = 0; i < 9; i++) {
+    const phase = (i / 9) * Math.PI * 2 + frameTime * (0.4 + i*0.07);
+    const fy    = y + h - ((frameTime * 22 + i*(h/9)) % h);
+    const fw    = 5 + Math.sin(phase) * 3;
+    ctx.globalAlpha = 0.25 + 0.25*Math.sin(phase + 1.2);
+    ctx.fillStyle = fogColor;
+    ctx.beginPath();
+    ctx.ellipse(x + w/2 + Math.sin(phase*1.4)*10, fy, fw, fw*1.6, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // sparkle dots
+  for (let i = 0; i < 5; i++) {
+    const blink = Math.sin(frameTime*3 + i*1.4);
+    if (blink < 0) continue;
+    const sx = x + 8 + ((i*37 + frameTime*8) % (w-16));
+    const sy = y + 8 + ((i*53 + frameTime*12) % (h-16));
+    ctx.globalAlpha = blink * 0.7;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(sx, sy, 1.5, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ─── DRAW: GATE MODAL ────────────────────────────────────────────────────────
+function drawGateModal() {
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(0, 0, W, H);
+
+  const mw=580, mh=350, mx=W/2-mw/2, my=H/2-mh/2;
+  const m = gateModal;
+
+  // Dark card body
+  ctx.fillStyle = '#141414';
+  ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 12); ctx.fill();
+
+  // Gold outer border — thick, like the gate itself
+  const gsh = 0.7 + 0.3*Math.sin(frameTime*2.8);
+  const gGrad = ctx.createLinearGradient(mx, my, mx+mw, my+mh);
+  gGrad.addColorStop(0,   `rgba(255,200,40,${gsh})`);
+  gGrad.addColorStop(0.5, `rgba(200,130,0,${gsh})`);
+  gGrad.addColorStop(1,   `rgba(255,200,40,${gsh})`);
+  ctx.strokeStyle = gGrad; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 12); ctx.stroke();
+  // Inner dark inset line
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(mx+3, my+3, mw-6, mh-6, 10); ctx.stroke();
+
+  // Gold header bar with rivets
+  const sh = 0.82 + 0.18*Math.sin(frameTime*3.2);
+  ctx.fillStyle = `rgb(${Math.floor(190*sh)},${Math.floor(120*sh)},0)`;
+  ctx.beginPath(); ctx.roundRect(mx, my, mw, 46, [12,12,0,0]); ctx.fill();
+  // Rivet dots
+  for (const rx of [mx+14, mx+mw-14]) {
+    ctx.fillStyle = '#1a0e00'; ctx.beginPath(); ctx.arc(rx, my+23, 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,200,60,0.4)'; ctx.beginPath(); ctx.arc(rx-1, my+21, 2, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#1a0e00';
+  ctx.fillText('GATE LOCK', W/2, my+30);
+
+  drawPuzzleUI(mx, my, mw, mh);
+
+  if (m.phase === 'done') {
+    // Result overlay
+    const result = m.result;
+    const glowCol = result==='both' ? '#cc44ff' : result==='red' ? '#ff4444' : result==='none' ? '#ff3333' : '#4488ff';
+    const label   = result==='both' ? 'BOTH PIPES OPEN!' : result==='red' ? 'RED PIPE OPENS' : result==='none' ? 'STILL SEALED' : 'BLUE PIPE OPENS';
+    const effText = result==='none' ? 'neither condition satisfied'
+      : result==='both' ? `${EFFECT_META[m.redEff].label}  +  ${EFFECT_META[m.blueEff].label}`
+      : result==='red'  ? EFFECT_META[m.redEff].label
+      : EFFECT_META[m.blueEff].label;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 12); ctx.fill();
+
+    ctx.font = 'bold 26px monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = glowCol;
+    ctx.fillText(label, W/2, H/2 - 14);
+
+    const effCol = result==='both' ? '#cc99ff' : result==='red' ? '#ff9999' : result==='none' ? '#ff8888' : '#99ccff';
+    ctx.font = 'bold 14px monospace'; ctx.fillStyle = effCol;
+    ctx.fillText(effText, W/2, H/2 + 14);
+
+    ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fillText('click or Enter to continue', W/2, my+mh-14);
+
+  }
+}
+
+function drawPuzzleUI(mx, my, mw, mh) {
+  const m  = gateModal;
+  const hz = m.hitZones;
+  const contentY = my + 56;
+  const pipeW = 104, pipeH = 172, pipeY = contentY + 2;
+
+  const pipeLX = mx + 12;
+  const pipeRX = mx + mw - 12 - pipeW;
+
+  // Lock box: leaves 38px gap on each side for curves
+  const lx = mx + 154, lw = mw - 308, lh = 172;
+  const ly = contentY + 2;
+  const lockMidY = ly + lh / 2;
+  const slotCX = lx + lw / 2; // = W/2
+
+  // ── Curved pipe connectors (behind everything)
+  const curvePipe = (x1, y1, x2, y2, col, shadow) => {
+    const mid = (x1 + x2) / 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(mid, y1, mid, y2, x2, y2);
+    ctx.strokeStyle = shadow; ctx.lineWidth = 13; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(mid, y1, mid, y2, x2, y2);
+    ctx.strokeStyle = col; ctx.lineWidth = 8; ctx.stroke();
+    ctx.lineCap = 'butt';
+  };
+  curvePipe(pipeLX + pipeW, pipeY + pipeH/2, lx,       lockMidY, '#cc2222', '#550000');
+  curvePipe(lx + lw,        lockMidY,        pipeRX,   pipeY + pipeH/2, '#2255cc', '#000d33');
+
+  // ── Red pipe
+  drawPipe(pipeLX, pipeY, pipeW, pipeH, '#ff5555', '#1e0808');
+  ctx.strokeStyle = '#882222'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(pipeLX, pipeY, pipeW, pipeH, 8); ctx.stroke();
+  ctx.fillStyle = '#8a1a1a';
+  ctx.beginPath(); ctx.roundRect(pipeLX, pipeY, pipeW, 24, [8,8,0,0]); ctx.fill();
+  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffcccc';
+  ctx.fillText('RED PIPE', pipeLX + pipeW/2, pipeY + 16);
+  const rby = pipeY + pipeH/2 - 26;
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.beginPath(); ctx.roundRect(pipeLX + 8, rby, pipeW - 16, 54, 5); ctx.fill();
+  ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#ff5555';
+  ctx.fillText(`x = ${m.redVal}`, pipeLX + pipeW/2, rby + 20);
+  ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ff9999';
+  ctx.fillText(EFFECT_META[m.redEff].label, pipeLX + pipeW/2, rby + 36);
+  ctx.font = '9px monospace'; ctx.fillStyle = '#aa6666';
+  ctx.fillText(EFFECT_META[m.redEff].desc, pipeLX + pipeW/2, rby + 50);
+
+  // ── Blue pipe
+  drawPipe(pipeRX, pipeY, pipeW, pipeH, '#5599ff', '#080e1e');
+  ctx.strokeStyle = '#224488'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(pipeRX, pipeY, pipeW, pipeH, 8); ctx.stroke();
+  ctx.fillStyle = '#1a2d8a';
+  ctx.beginPath(); ctx.roundRect(pipeRX, pipeY, pipeW, 24, [8,8,0,0]); ctx.fill();
+  ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ccdeff'; ctx.textAlign = 'center';
+  ctx.fillText('BLUE PIPE', pipeRX + pipeW/2, pipeY + 16);
+  const bby = pipeY + pipeH/2 - 26;
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.beginPath(); ctx.roundRect(pipeRX + 8, bby, pipeW - 16, 54, 5); ctx.fill();
+  ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#5599ff';
+  ctx.fillText(`x = ${m.blueVal}`, pipeRX + pipeW/2, bby + 20);
+  ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#99bbff';
+  ctx.fillText(EFFECT_META[m.blueEff].label, pipeRX + pipeW/2, bby + 36);
+  ctx.font = '9px monospace'; ctx.fillStyle = '#6688aa';
+  ctx.fillText(EFFECT_META[m.blueEff].desc, pipeRX + pipeW/2, bby + 50);
+
+  // ── Lock box: dark background
+  ctx.fillStyle = '#0e0e0e';
+  ctx.beginPath(); ctx.roundRect(lx, ly, lw, lh, 8); ctx.fill();
+
+  // ── Keyhole shape containing BOTH conditions
+  const khCircR = 52;
+  const khStemW = 86;
+  const khStemH = 62;
+  const khTopY  = ly + 6;
+  const khCircCY = khTopY + khCircR;
+  const khJAngle = Math.acos((khStemW/2) / khCircR);
+  const khJY = khCircCY + khCircR * Math.sin(khJAngle);
+  const khBotY = khTopY + khCircR * 2 + khStemH;
+
+  ctx.beginPath();
+  ctx.moveTo(slotCX - khStemW/2, khBotY);
+  ctx.lineTo(slotCX + khStemW/2, khBotY);
+  ctx.lineTo(slotCX + khStemW/2, khJY);
+  ctx.arc(slotCX, khCircCY, khCircR, khJAngle, Math.PI - khJAngle, true);
+  ctx.closePath();
+  ctx.fillStyle = '#080808'; ctx.fill();
+
+  ctx.strokeStyle = '#c47f00'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(slotCX - khStemW/2, khBotY);
+  ctx.lineTo(slotCX + khStemW/2, khBotY);
+  ctx.lineTo(slotCX + khStemW/2, khJY);
+  ctx.arc(slotCX, khCircCY, khCircR, khJAngle, Math.PI - khJAngle, true);
+  ctx.closePath();
+  ctx.stroke();
+
+  // ── Row 1: inside circle
+  const slotW = 54, slotH = 28;
+  const labelGap = slotW/2 + 10;
+  const row1Y = khCircCY - slotH/2;
+
+  ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#999'; ctx.textAlign = 'right';
+  ctx.fillText('x', slotCX - labelGap, khCircCY + 5);
+  ctx.textAlign = 'left';
+  ctx.fillText(`${m.n1}`, slotCX + labelGap, khCircCY + 5);
+
+  const s1sel = m.selectedSlot === 1;
+  ctx.fillStyle = s1sel ? '#18183a' : '#111';
+  ctx.beginPath(); ctx.roundRect(slotCX - slotW/2, row1Y, slotW, slotH, 5); ctx.fill();
+  ctx.strokeStyle = s1sel ? '#aabbff' : m.slot1 ? '#c47f00' : '#444';
+  ctx.lineWidth = s1sel ? 2 : 1.5;
+  ctx.beginPath(); ctx.roundRect(slotCX - slotW/2, row1Y, slotW, slotH, 5); ctx.stroke();
+  ctx.font = 'bold 13px monospace'; ctx.fillStyle = m.slot1 ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
+  ctx.fillText(m.slot1 || '?', slotCX, khCircCY + 5);
+  hz.slot1 = { x: slotCX - slotW/2 - 4, y: row1Y - 4, w: slotW + 8, h: slotH + 8 };
+
+  // Connector label
+  const connY = khJY + (khBotY - khJY) * 0.22;
+  ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#c47f00'; ctx.textAlign = 'center';
+  ctx.fillText(m.connector, slotCX, connY + 5);
+
+  // ── Row 2: inside stem
+  const stemMidY = khJY + (khBotY - khJY) * 0.62;
+  const row2Y = stemMidY - slotH/2;
+
+  ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#999'; ctx.textAlign = 'right';
+  ctx.fillText('x', slotCX - labelGap, stemMidY + 5);
+  ctx.textAlign = 'left';
+  ctx.fillText(`${m.n2}`, slotCX + labelGap, stemMidY + 5);
+
+  const s2sel = m.selectedSlot === 2;
+  ctx.fillStyle = s2sel ? '#18183a' : '#111';
+  ctx.beginPath(); ctx.roundRect(slotCX - slotW/2, row2Y, slotW, slotH, 5); ctx.fill();
+  ctx.strokeStyle = s2sel ? '#aabbff' : m.slot2 ? '#c47f00' : '#444';
+  ctx.lineWidth = s2sel ? 2 : 1.5;
+  ctx.beginPath(); ctx.roundRect(slotCX - slotW/2, row2Y, slotW, slotH, 5); ctx.stroke();
+  ctx.font = 'bold 13px monospace'; ctx.fillStyle = m.slot2 ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
+  ctx.fillText(m.slot2 || '?', slotCX, stemMidY + 5);
+  hz.slot2 = { x: slotCX - slotW/2 - 4, y: row2Y - 4, w: slotW + 8, h: slotH + 8 };
+
+  // ── Live evaluation hints
+  if (m.slot1 || m.slot2) {
+    const redOpen  = m.slot1 && m.slot2 ? evalPuzzle(m, m.redVal)  : null;
+    const blueOpen = m.slot1 && m.slot2 ? evalPuzzle(m, m.blueVal) : null;
+    const badgeY = pipeY + pipeH - 26, badgeW = pipeW - 16, badgeH = 20;
+
+    const drawBadge = (bx, open) => {
+      const pending = open === null;
+      const bg     = pending ? 'rgba(0,0,0,0.55)' : open ? 'rgba(0,100,0,0.75)' : 'rgba(100,0,0,0.75)';
+      const border = pending ? '#444' : open ? '#44dd44' : '#dd3333';
+      const txt    = pending ? '? ? ?' : open ? '✓  OPENS' : '✗  CLOSED';
+      const col    = pending ? '#555' : open ? '#88ff88' : '#ff6666';
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.roundRect(bx + 8, badgeY, badgeW, badgeH, 4); ctx.fill();
+      ctx.strokeStyle = border; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(bx + 8, badgeY, badgeW, badgeH, 4); ctx.stroke();
+      ctx.font = 'bold 9px monospace'; ctx.fillStyle = col; ctx.textAlign = 'center';
+      ctx.fillText(txt, bx + 8 + badgeW / 2, badgeY + 13);
+    };
+
+    drawBadge(pipeLX, redOpen);
+    drawBadge(pipeRX, blueOpen);
+  }
+
+  // ── Operator buttons
+  const opBW=50, opBH=28, opGap=5;
+  const rowW = 3*(opBW+opGap)-opGap;
+  const opBaseY = contentY + pipeH + 10;
+  hz.ops = [];
+
+  [OPERATORS.slice(0,3), OPERATORS.slice(3)].forEach((row, ri) => {
+    row.forEach((op, i) => {
+      const ox = W/2 - rowW/2 + i*(opBW+opGap), oy = opBaseY + ri*(opBH+5);
+      const active = m.slot1===op || m.slot2===op;
+      ctx.fillStyle = active ? '#1e2030' : '#181818';
+      ctx.beginPath(); ctx.roundRect(ox, oy, opBW, opBH, 5); ctx.fill();
+      ctx.strokeStyle = active ? '#c47f00' : '#2e2e2e'; ctx.lineWidth = active ? 1.5 : 1;
+      ctx.beginPath(); ctx.roundRect(ox, oy, opBW, opBH, 5); ctx.stroke();
+      ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = active ? '#f0c040' : '#666';
+      ctx.fillText(op, ox + opBW/2, oy + 19);
+      hz.ops.push({ x:ox, y:oy, w:opBW, h:opBH, op });
+    });
+  });
+
+  // ── Activate button
+  const abY = opBaseY + 2*(opBH+5) + 6;
+  if (m.slot1 && m.slot2) {
+    const abW=158, abH=32, abX=W/2-79;
+    ctx.fillStyle = '#b87000';
+    ctx.beginPath(); ctx.roundRect(abX, abY, abW, abH, 7); ctx.fill();
+    ctx.strokeStyle = '#ffcc44'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(abX, abY, abW, abH, 7); ctx.stroke();
+    ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#fff8e0'; ctx.textAlign = 'center';
+    ctx.fillText('ACTIVATE →', W/2, abY + 22);
+    hz.activate = { x:abX, y:abY, w:abW, h:abH };
+  } else {
+    hz.activate = null;
+    ctx.font = '11px monospace'; ctx.fillStyle = '#333'; ctx.textAlign = 'center';
+    ctx.fillText('fill both slots to activate', W/2, abY + 18);
+  }
+}
+
+
+// ─── DRAW: SLIME CHARACTER ───────────────────────────────────────────────────
+function drawSlime(wx, wy) {
+  const R   = RADIUS * CELL;
+  const bob = moving ? Math.sin(walkTimer * 13) * 2.5 : Math.sin(frameTime * 2) * 1.0;
+  const sx  = moving ? 1 + Math.abs(Math.sin(walkTimer * 13)) * 0.13 : 1;
+  const sy  = moving ? 1 - Math.abs(Math.sin(walkTimer * 13)) * 0.09 : 1;
+
+  ctx.save();
+  ctx.translate(wx, wy + bob);
+  ctx.scale(sx, sy);
+
+  // Glow ring from active effects
+  const now = frameTime;
+  const effs = activeEffects.filter(e => e.endTime > now);
+  if (effs.length > 0) {
+    const hasRed  = effs.some(e => EFFECT_META[e.type].pipe === 'red');
+    const hasBlue = effs.some(e => EFFECT_META[e.type].pipe === 'blue');
+    const glowCol = (hasRed && hasBlue) ? '#cc44ff' : hasRed ? '#ff4444' : '#4488ff';
+    // Find soonest expiry for blink timing
+    const soonest = effs.reduce((a,b) => a.endTime < b.endTime ? a : b);
+    const timeLeft = soonest.endTime - now;
+    const blinking = timeLeft < 2.5;
+    const show = blinking ? Math.sin(now * 9) > 0 : true;
+    if (show) {
+      ctx.shadowColor = glowCol;
+      ctx.shadowBlur  = 14;
+      ctx.strokeStyle = glowCol;
+      ctx.lineWidth   = 3;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.arc(0, 0, R + 5, 0, Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur  = 0;
+    }
+  }
+
+  // Shadow
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(1, R*0.78, R*0.62, R*0.18, 0, 0, Math.PI*2); ctx.fill();
+
+  // Body
+  ctx.fillStyle = '#3ecf3e';
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI*2); ctx.fill();
+
+  // Underside
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.beginPath(); ctx.ellipse(0, R*0.3, R*0.75, R*0.38, 0, 0, Math.PI); ctx.fill();
+
+  // Sheen
+  ctx.fillStyle = 'rgba(255,255,255,0.38)';
+  ctx.beginPath(); ctx.ellipse(-R*.22, -R*.28, R*.36, R*.22, -0.4, 0, Math.PI*2); ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(-R*.27, -R*.08, R*.20, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc( R*.27, -R*.08, R*.20, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-R*.19, -R*.16, R*.08, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc( R*.35, -R*.16, R*.08, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
+
+// ─── DRAW: MAZE ──────────────────────────────────────────────────────────────
+function drawMaze() {
+  const {cx:camX, cy:camY} = camOff();
+  ctx.save();
+  ctx.translate(-camX, -camY);
+  ctx.beginPath(); ctx.rect(camX, camY, W, H); ctx.clip();
+
+  ctx.fillStyle = '#f2f2f2';
+  ctx.fillRect(camX, camY, W, H);
+
+  for (let row = 0; row < MH; row++) {
+    for (let col = 0; col < MW; col++) {
+      const cell    = MAP[row][col];
+      const px      = col*CELL, py = row*CELL;
+      const flooded = isFlooded(col, row);
+      const depth   = floodDepth[`${col},${row}`];
+      const solid   = flooded && currentFloodDepth >= (depth ?? 0) + 1;
+      const warning = !flooded && depth !== undefined && depth <= currentFloodDepth + 1.6;
+      const sgKey   = `${col},${row}`;
+      const sg      = smokeGates[sgKey];
+
+      if (cell === 1) {
+        ctx.fillStyle = '#2a2a2a';
+        ctx.fillRect(px, py, CELL, CELL);
+        ctx.fillStyle = '#363636';
+        ctx.fillRect(px, py, CELL-2, CELL-2);
+
+      } else if (flooded && (cell !== 2 || solid)) {
+        if (hasEffect('FREEZE')) {
+          // Ice: static pale blue-white with crack lines
+          ctx.fillStyle = '#a8d8f0';
+          ctx.fillRect(px, py, CELL, CELL);
+          // Highlight sheen
+          ctx.fillStyle = 'rgba(255,255,255,0.45)';
+          ctx.fillRect(px+2, py+2, CELL-4, 6);
+          // Crack lines (seeded per-cell, static)
+          const cr = (col * 7 + row * 13) % 4;
+          ctx.strokeStyle = 'rgba(160,210,240,0.7)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          if (cr === 0) { ctx.moveTo(px+8,  py+6);  ctx.lineTo(px+20, py+18); ctx.lineTo(px+14, py+30); }
+          if (cr === 1) { ctx.moveTo(px+24, py+4);  ctx.lineTo(px+16, py+16); ctx.lineTo(px+26, py+28); }
+          if (cr === 2) { ctx.moveTo(px+6,  py+20); ctx.lineTo(px+18, py+12); ctx.lineTo(px+28, py+22); }
+          if (cr === 3) { ctx.moveTo(px+10, py+28); ctx.lineTo(px+22, py+16); ctx.lineTo(px+30, py+8);  }
+          ctx.stroke();
+          // Faint inner border
+          ctx.strokeStyle = 'rgba(200,235,255,0.5)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px+1, py+1, CELL-2, CELL-2);
+        } else {
+          const w1 = 0.5 + 0.5*Math.sin(frameTime*2.0 + col*.8 + row*.6);
+          const w2 = 0.5 + 0.5*Math.sin(frameTime*1.4 + col*.5 - row*.7 + 1.8);
+          ctx.fillStyle = `rgb(${Math.floor(30+w1*14)},${Math.floor(100+w2*18)},${Math.floor(210+w1*14)})`;
+          ctx.fillRect(px, py, CELL, CELL);
+          ctx.fillStyle = `rgba(180,220,255,${0.22+w2*.14})`;
+          ctx.fillRect(px + Math.floor(w1*(CELL-8)), py+4, 3, CELL-8);
+        }
+
+      } else if (warning && !hasEffect('FREEZE')) {
+        const pulse = 0.10 + 0.08*Math.sin(frameTime*4.5);
+        ctx.fillStyle = `rgba(60,130,220,${pulse})`;
+        ctx.fillRect(px, py, CELL, CELL);
+
+      } else if (cell === 2) {
+        const sh = 0.75 + 0.25*Math.sin(frameTime*3.2 + col*.8 + row*.5);
+        ctx.fillStyle = '#c47f00';
+        ctx.fillRect(px, py, CELL, CELL);
+        ctx.fillStyle = `rgba(255,195,30,${sh*.85})`;
+        ctx.fillRect(px+2, py+2, CELL-4, CELL-4);
+        ctx.fillStyle = `rgba(200,140,0,${sh*.6})`;
+        for (let i = 0; i < 3; i++) ctx.fillRect(px+5+i*((CELL-10)/2), py+2, 3, CELL-4);
+        ctx.strokeStyle = `rgba(255,210,60,${sh})`;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(px+1, py+1, CELL-2, CELL-2);
+        // Flooded but not yet solid — blue water overlay on top of the gate
+        if (flooded) {
+          const w1 = 0.5 + 0.5*Math.sin(frameTime*2.0 + col*.8 + row*.6);
+          ctx.fillStyle = `rgba(30,100,210,${0.45 + w1*0.15})`;
+          ctx.fillRect(px, py, CELL, CELL);
+        }
+
+      } else if (cell === 9) {
+        const pulse = 0.5 + 0.5*Math.sin(frameTime*2.5);
+        ctx.fillStyle = '#e84422';
+        ctx.fillRect(px, py, CELL, CELL);
+        ctx.fillStyle = `rgba(255,255,255,${0.15+pulse*.2})`;
+        ctx.beginPath(); ctx.arc(px+CELL/2, py+CELL/2, CELL*.38+pulse*2.5, 0, Math.PI*2); ctx.fill();
+        ctx.font = `bold ${Math.floor(CELL*.52)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#fff';
+        ctx.fillText('★', px+CELL/2, py+CELL/2+7);
+      }
+
+      // Smoke gate — persists until walked through (skip if flooded, water covers it)
+      if (sg && !flooded) {
+        const smColors = { red:'255,55,55', blue:'44,130,255', both:'170,44,255' };
+        const sc = smColors[sg.result] || '170,44,255';
+        // Solid tinted floor
+        ctx.fillStyle = `rgba(${sc},0.55)`;
+        ctx.fillRect(px, py, CELL, CELL);
+        // Animated shimmer
+        const shimmer = 0.25 + 0.2*Math.sin(frameTime*3.5 + col*0.7 + row*0.5);
+        ctx.fillStyle = `rgba(${sc},${shimmer})`;
+        ctx.fillRect(px+2, py+2, CELL-4, CELL-4);
+        // Floating particles
+        for (let p = 0; p < 5; p++) {
+          const px2 = px + 4 + ((p*13 + frameTime*16) % (CELL-8));
+          const py2 = py + 4 + ((p*19 + frameTime*11) % (CELL-8));
+          ctx.globalAlpha = 0.4 + 0.35*Math.sin(frameTime*2.5+p*1.3);
+          ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.arc(px2, py2, 1.8, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // Spark animations
+  for (const sp of sparks) {
+    const px2 = sp.col*CELL+CELL/2, py2 = sp.row*CELL+CELL/2;
+    const dist = sp.p * CELL * 1.6;
+    ctx.fillStyle = `rgba(255,210,30,${1-sp.p})`;
+    ctx.beginPath();
+    ctx.arc(px2+Math.cos(sp.angle)*dist, py2+Math.sin(sp.angle)*dist, 4*(1-sp.p*.6), 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  drawSlime(player.x * CELL, player.y * CELL);
+  ctx.restore();
+}
+
+// ─── DRAW: HUD ────────────────────────────────────────────────────────────────
+function drawHUD() {
+  const frac     = Math.min(1, Math.max(0, currentFloodDepth / maxFloodDepth));
+  const barColor = frac < .4 ? '#3a9eea' : frac < .7 ? '#1e78d4' : '#0e50b8';
+
+  const bx=W/2-110, by=13, bw=220, bh=9;
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.roundRect(bx-1,by-1,bw+2,bh+2,4); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,3); ctx.fill();
+  if (frac > 0) {
+    ctx.fillStyle = barColor;
+    ctx.beginPath(); ctx.roundRect(bx,by,bw*frac,bh,3); ctx.fill();
+  }
+
+  ctx.font = '10px monospace'; ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillText('flood',bx,by-2);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillText('★ center',bx+bw,by-2);
+  ctx.textAlign = 'center';
+
+  if (currentFloodDepth < 0) {
+    const secsLeft = Math.ceil(-currentFloodDepth / FLOOD_RATE_BASE);
+    ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(`flood in ${secsLeft}s  ·  reach the ★`, W/2, by+bh+15);
+  } else {
+    // Timer until the next depth layer floods
+    const elapsed = currentFloodDepth / FLOOD_RATE_BASE;
+    const rampFrac = Math.min(1, elapsed / 45);
+    const currentRate = FLOOD_RATE_BASE + (FLOOD_RATE_MAX - FLOOD_RATE_BASE) * rampFrac;
+    const depthToNext = (Math.floor(currentFloodDepth) + 1) - currentFloodDepth;
+    const secsToNext = Math.ceil(depthToNext / currentRate);
+    const urgentColor = secsToNext <= 1 ? '255,120,80' : secsToNext <= 3 ? '120,180,255' : '80,150,220';
+    ctx.font = '11px monospace';
+    ctx.fillStyle = `rgba(${urgentColor},0.75)`;
+    ctx.fillText(`next block in ${secsToNext}s`, W/2, by+bh+15);
+  }
+
+  if (frac > 0.6) {
+    const p = (Math.sin(frameTime*3.5)+1)/2;
+    ctx.fillStyle = `rgba(30,80,200,${0.02+p*.04})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // Active effects strip
+  const now = frameTime;
+  const effs = activeEffects.filter(e => e.endTime > now);
+  if (effs.length > 0) {
+    let ex = 8;
+    const ey = H - 44;
+    ctx.textAlign = 'left';
+    for (const eff of effs) {
+      const timeLeft = eff.endTime - now;
+      const fading   = timeLeft < 2.5 && Math.sin(now * 9) <= 0;
+      ctx.globalAlpha = fading ? 0.1 : 1.0;
+      const meta = EFFECT_META[eff.type];
+      const label = `${meta.label} ${Math.ceil(timeLeft)}s`;
+      const tw    = ctx.measureText(label).width + 18;
+      ctx.fillStyle = meta.color + '28';
+      ctx.beginPath(); ctx.roundRect(ex, ey, tw, 22, 4); ctx.fill();
+      ctx.strokeStyle = meta.color + 'aa'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(ex, ey, tw, 22, 4); ctx.stroke();
+      ctx.font = 'bold 10px monospace'; ctx.fillStyle = meta.color;
+      ctx.fillText(label, ex+9, ey+15);
+      ex += tw + 6;
+    }
+    ctx.globalAlpha = 1.0;
+  }
+}
+
+// ─── DRAW: END SCREEN ────────────────────────────────────────────────────────
+function drawEndScreen(won) {
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.fillRect(0,0,W,H);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 52px monospace';
+  ctx.fillStyle = won ? '#3ecf3e' : '#3a9eea';
+  ctx.fillText(won ? '★  YOU MADE IT!' : 'FLOODED OUT', W/2, H/2-12);
+  ctx.font = '14px monospace'; ctx.fillStyle = '#555';
+  ctx.fillText(won ? 'Enter  →  new maze' : 'Enter  →  try again (same maze)', W/2, H/2+28);
+  ctx.fillText('R  →  ' + (won ? 'same maze' : 'new maze'), W/2, H/2+52);
+}
+
+// ─── RESET ───────────────────────────────────────────────────────────────────
+function softReset() {
+  // Restore all gates that were opened during this run
+  for (const [c, r] of savedGates) MAP[r][c] = 2;
+  computeFlood();
+  player.x = 1.5; player.y = 1.5;
+  currentFloodDepth = -(FLOOD_RATE * 12);
+  gameWon = gameLost = false;
+  gateModal = null;
+  sparks.length = 0;
+  moving = false; walkTimer = 0;
+  activeEffects = [];
+  smokeGates = {};
+  gatePuzzles = {};
+}
+
+function reset() {
+  runSeed = Date.now() >>> 0;
+  MAP = makeMap();
+  savedGates = MAP.flatMap((row, r) => row.map((v, c) => v === 2 ? [c, r] : null).filter(Boolean));
+  softReset();
+}
+
+document.getElementById('restart-btn').addEventListener('click', softReset);
+document.getElementById('newmaze-btn').addEventListener('click', reset);
+
+// ─── LOOP ────────────────────────────────────────────────────────────────────
+let prevTs = null;
+function loop(ts) {
+  const dt = prevTs !== null ? Math.min(0.05, (ts-prevTs)/1000) : 0;
+  prevTs = ts; frameTime += dt;
+
+  if ((keys['r']||keys['R']) && (gameWon||gameLost)) { gameWon ? softReset() : reset(); }
+
+  if (!gameWon && !gameLost) {
+    if (!hasEffect('FREEZE')) {
+      // Rate ramps from FLOOD_RATE_BASE to FLOOD_RATE_MAX over ~45 seconds of active flooding
+      const elapsed = Math.max(0, currentFloodDepth) / FLOOD_RATE_BASE;
+      const rampFrac = Math.min(1, elapsed / 45);
+      const rate = FLOOD_RATE_BASE + (FLOOD_RATE_MAX - FLOOD_RATE_BASE) * rampFrac;
+      currentFloodDepth += rate * dt;
+    }
+    updatePlayer(dt);
+    // Expire smoke gates after 12 seconds
+    const now12 = performance.now();
+    for (const key of Object.keys(smokeGates)) {
+      if (now12 - smokeGates[key].spawnTime > 12000) delete smokeGates[key];
+    }
+  }
+
+  for (let i = sparks.length-1; i >= 0; i--) {
+    sparks[i].p += dt * 2.8;
+    if (sparks[i].p >= 1) sparks.splice(i, 1);
+  }
+
+  drawMaze();
+  if (hasEffect('DIZZY')) {
+    const lightR = 85;
+    const grad = ctx.createRadialGradient(W/2, H/2, lightR * 0.55, W/2, H/2, lightR * 1.35);
+    grad.addColorStop(0,   'rgba(0,0,0,0)');
+    grad.addColorStop(1,   'rgba(0,0,0,0.96)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+  drawHUD();
+  if (gateModal)  drawGateModal();
+  if (gameWon)    drawEndScreen(true);
+  if (gameLost)   drawEndScreen(false);
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
