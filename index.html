@@ -15,7 +15,7 @@ body {
   height: 100vh;
 }
 canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,0.5); }
-#hud-area { display: flex; flex-direction: column; align-items: center; gap: 0; margin-top: 5px; width: 800px; }
+#hud-area { display: flex; flex-direction: column; align-items: center; gap: 0; margin-top: 5px; width: 880px; }
 #top-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 100%; margin-bottom: 4px; }
 #controls-left  { text-align: left; }
 #controls-right { text-align: right; }
@@ -75,7 +75,7 @@ canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,
 'use strict';
 
 // ─── CANVAS ──────────────────────────────────────────────────────────────────
-const W = 800, H = 520;
+const W = 880, H = 560;
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
 canvas.width  = W;
@@ -195,14 +195,15 @@ function makeMap() {
   const s = runSeed;
   const m = buildSpiralMaze(MW, MH, s);
 
-  // Find open cells on or near the outer boundary as exit candidates
-  const edgeCandidates = [];
+  // Find outer wall cells (absolute boundary) adjacent to an open inner cell — exit goes on the wall
+  const edgeCandidates = []; // [ex, ey, px, py]  wall cell + adjacent open passage
+  for (let c = 1; c < MW - 1; c++) {
+    if (m[1][c] === 0)      edgeCandidates.push([c, 0,      c, 1]);
+    if (m[MH-2][c] === 0)   edgeCandidates.push([c, MH-1,   c, MH-2]);
+  }
   for (let r = 1; r < MH - 1; r++) {
-    for (let c = 1; c < MW - 1; c++) {
-      if (m[r][c] === 0 && (r === 1 || r === MH-2 || c === 1 || c === MW-2)) {
-        edgeCandidates.push([c, r]);
-      }
-    }
+    if (m[r][1] === 0)      edgeCandidates.push([0,    r, 1,    r]);
+    if (m[r][MW-2] === 0)   edgeCandidates.push([MW-1, r, MW-2, r]);
   }
   // Seeded shuffle to pick a deterministic exit
   let rng = s ^ 0xDEAD5EED;
@@ -211,11 +212,11 @@ function makeMap() {
     const j = rng % (i + 1);
     [edgeCandidates[i], edgeCandidates[j]] = [edgeCandidates[j], edgeCandidates[i]];
   }
-  const [ex, ey] = edgeCandidates[0] || [1, 1];
+  const [ex, ey, px, py] = edgeCandidates[0] || [1, 0, 1, 1];
   exitPos = [ex, ey];
 
-  // BFS from center to exit for mandatory gate placement
-  const path = bfsPath(m, MW, MH, CX, CY, ex, ey);
+  // BFS from center to the open passage adjacent to the exit wall cell
+  const path = bfsPath(m, MW, MH, CX, CY, px, py);
 
   // Place mandatory gates on the outer 55% of the path (away from center)
   const passages = path.filter(([x, y]) => !((x & 1) && (y & 1)));
@@ -633,8 +634,13 @@ function dismissIntro() {
 }
 
 window.addEventListener('keydown', e => {
-  keys[e.key] = true;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  // Don't register arrow keys as movement while modal is open
+  if (gateModal && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    gateModal.selectedSlot = gateModal.selectedSlot === 1 ? 2 : 1;
+    return;
+  }
+  keys[e.key] = true;
   if (showIntro) { dismissIntro(); return; }
   if (e.key === 'c' || e.key === 'C') { showCheatsheet = !showCheatsheet; return; }
   if (!gateModal && (e.key === 'r' || e.key === 'R')) { softReset(); return; }
@@ -649,7 +655,7 @@ window.addEventListener('keydown', e => {
       else                      { m.slot2 = op; if (!m.slot1) m.selectedSlot = 1; }
       return;
     }
-    if (e.key === 'Tab') {
+    if (e.key === 'Tab' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
       gateModal.selectedSlot = gateModal.selectedSlot === 1 ? 2 : 1;
       return;
@@ -703,6 +709,7 @@ const canvasToCell = (px, py) => {
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let gameWon = false, gameLost = false, frameTime = 0;
+let dissolveStartTime = -1, dissolveCol = 0, dissolveRow = 0;
 let gateModal = null;
 const sparks  = [];
 
@@ -836,7 +843,10 @@ function updatePlayer(dt) {
 
   const mc=Math.floor(player.x), mr=Math.floor(player.y);
   if (MAP[mr]?.[mc] === 9) gameWon = true;
-  if (!hasEffect('WATERPROOF') && isFlooded(mc, mr)) gameLost = true;
+  if (!hasEffect('WATERPROOF') && isFlooded(mc, mr)) {
+    if (!gameLost) { dissolveStartTime = frameTime; dissolveCol = mc; dissolveRow = mr; }
+    gameLost = true;
+  }
 
   // Walk through smoke: apply its effect then clear it
   const sk = `${mc},${mr}`;
@@ -884,7 +894,7 @@ function drawGateModal() {
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.fillRect(0, 0, W, H);
 
-  const mw=580, mh=350, mx=W/2-mw/2, my=H/2-mh/2;
+  const mw=680, mh=400, mx=W/2-mw/2, my=H/2-mh/2;
   const m = gateModal;
 
   // Dark card body
@@ -948,7 +958,7 @@ function drawPuzzleUI(mx, my, mw, mh) {
   const m  = gateModal;
   const hz = m.hitZones;
   const contentY = my + 36;
-  const pipeW = 104;
+  const pipeW = 138;
   const lh = 172;                              // lock box logical height (drives layout)
   const pipeH = mh - 56;                       // pipes fill full content height
   const pipeY = contentY;                      // pipes start right at content top
@@ -956,8 +966,8 @@ function drawPuzzleUI(mx, my, mw, mh) {
   const pipeLX = mx + 12;
   const pipeRX = mx + mw - 12 - pipeW;
 
-  // Lock box: wider to prevent number clipping
-  const lx = mx + 130, lw = mw - 260;
+  // Lock box: fixed-width center keeps middle same size regardless of modal width
+  const lw = 320, lx = mx + (mw - lw) / 2;
   const ly = contentY + 2;
   const lockMidY = ly + lh / 2;
   const slotCX = lx + lw / 2; // = W/2
@@ -1014,12 +1024,12 @@ function drawPuzzleUI(mx, my, mw, mh) {
   const bby = ly + lh/2 - 26;
   ctx.fillStyle = 'rgba(0,0,0,0.82)';
   ctx.beginPath(); ctx.roundRect(pipeLX + 8, bby, pipeW - 16, 54, 5); ctx.fill();
-  ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#5599ff';
+  ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#5599ff';
   ctx.fillText(`x = ${m.blueVal}`, pipeLX + pipeW/2, bby + 20);
-  ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#99bbff';
-  ctx.fillText(EFFECT_META[m.blueEff].label, pipeLX + pipeW/2, bby + 36);
-  ctx.font = '9px monospace'; ctx.fillStyle = '#6688aa';
-  ctx.fillText(EFFECT_META[m.blueEff].desc, pipeLX + pipeW/2, bby + 50);
+  ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#99bbff';
+  ctx.fillText(EFFECT_META[m.blueEff].label, pipeLX + pipeW/2, bby + 37);
+  ctx.font = '11px monospace'; ctx.fillStyle = '#6688aa';
+  ctx.fillText(EFFECT_META[m.blueEff].desc, pipeLX + pipeW/2, bby + 52);
 
   // ── Red pipe (RIGHT)
   drawPipe(pipeRX, pipeY, pipeW, pipeH, '#ff5555', '#1e0808');
@@ -1028,12 +1038,12 @@ function drawPuzzleUI(mx, my, mw, mh) {
   const rby = ly + lh/2 - 26;
   ctx.fillStyle = 'rgba(0,0,0,0.82)';
   ctx.beginPath(); ctx.roundRect(pipeRX + 8, rby, pipeW - 16, 54, 5); ctx.fill();
-  ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#ff5555';
+  ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#ff5555';
   ctx.fillText(`x = ${m.redVal}`, pipeRX + pipeW/2, rby + 20);
-  ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ff9999';
-  ctx.fillText(EFFECT_META[m.redEff].label, pipeRX + pipeW/2, rby + 36);
-  ctx.font = '9px monospace'; ctx.fillStyle = '#aa6666';
-  ctx.fillText(EFFECT_META[m.redEff].desc, pipeRX + pipeW/2, rby + 50);
+  ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#ff9999';
+  ctx.fillText(EFFECT_META[m.redEff].label, pipeRX + pipeW/2, rby + 37);
+  ctx.font = '11px monospace'; ctx.fillStyle = '#aa6666';
+  ctx.fillText(EFFECT_META[m.redEff].desc, pipeRX + pipeW/2, rby + 52);
 
   // ── Keyhole shape containing BOTH conditions
   const khCircR = 60;
@@ -1164,7 +1174,7 @@ function drawPuzzleUI(mx, my, mw, mh) {
     hz.activate = { x:abX, y:abY, w:abW, h:abH };
   } else {
     hz.activate = null;
-    ctx.font = '11px monospace'; ctx.fillStyle = '#333'; ctx.textAlign = 'center';
+    ctx.font = '11px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
     ctx.fillText('fill both slots to activate', W/2, abY + 18);
   }
 }
@@ -1346,6 +1356,29 @@ function drawMaze() {
     }
   }
 
+  // Dissolve effect — slime spreads through flood water on death
+  if (gameLost && dissolveStartTime >= 0) {
+    const elapsed = frameTime - dissolveStartTime;
+    const spreadR = elapsed * 3.5 + 0.5; // start at 0.5 so death cell is instant
+    for (let row = 0; row < MH; row++) {
+      for (let col = 0; col < MW; col++) {
+        if (!isFlooded(col, row)) continue;
+        const dist = Math.sqrt((col - dissolveCol) ** 2 + (row - dissolveRow) ** 2);
+        const fadeZone = 2.5;
+        if (dist > spreadR + fadeZone) continue;
+        // t=0 at death cell (pure green), t=1 at spread edge (blue-green)
+        const t = Math.min(1, dist / Math.max(1, spreadR));
+        // soft edge: fade in over fadeZone cells
+        const edgeFade = dist < spreadR ? 1 : 1 - (dist - spreadR) / fadeZone;
+        const r = Math.round(62  * (1-t) + 30  * t);
+        const g = Math.round(207 * (1-t) + 150 * t);
+        const b = Math.round(62  * (1-t) + 190 * t);
+        ctx.fillStyle = `rgba(${r},${g},${b},${(0.72 - t * 0.25) * edgeFade})`;
+        ctx.fillRect(col*CELL, row*CELL, CELL, CELL);
+      }
+    }
+  }
+
   // Spark animations
   for (const sp of sparks) {
     const px2 = sp.col*CELL+CELL/2, py2 = sp.row*CELL+CELL/2;
@@ -1397,11 +1430,19 @@ function drawHUD() {
     const rampFrac = Math.min(1, elapsed / 45);
     const currentRate = floodBase() + (floodMax() - floodBase()) * rampFrac;
     const depthToNext = (Math.floor(currentFloodDepth) + 1) - currentFloodDepth;
-    const secsToNext = Math.ceil(depthToNext / currentRate);
-    const urgentColor = secsToNext <= 1 ? '255,120,80' : secsToNext <= 3 ? '120,180,255' : '80,150,220';
+    const secsToNext = depthToNext / currentRate;
     ctx.font = '11px monospace';
-    ctx.fillStyle = `rgba(${urgentColor},0.75)`;
-    ctx.fillText(`next block in ${secsToNext}s  ·  reach the ★ on the edge`, W/2, by+bh+15);
+    const timerStr = `next block in ${secsToNext.toFixed(1)}s`;
+    const suffix = `  ·  reach the ★ on the edge`;
+    const timerCol = secsToNext <= 0.5 ? 'rgba(220,60,60,0.9)' : 'rgba(80,150,220,0.75)';
+    const totalW2 = ctx.measureText(timerStr + suffix).width;
+    const tx = W/2 - totalW2/2;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = timerCol;
+    ctx.fillText(timerStr, tx, by+bh+15);
+    ctx.fillStyle = 'rgba(80,150,220,0.75)';
+    ctx.fillText(suffix, tx + ctx.measureText(timerStr).width, by+bh+15);
+    ctx.textAlign = 'center';
   }
 
   if (floodPct > 0.6) {
@@ -1443,10 +1484,10 @@ function drawEndScreen(won) {
   ctx.textAlign = 'center';
   ctx.font = 'bold 52px monospace';
   ctx.fillStyle = won ? '#3ecf3e' : '#3a9eea';
-  ctx.fillText(won ? '★  YOU MADE IT!' : 'FLOODED OUT', W/2, H/2-12);
+  ctx.fillText(won ? 'YOU ESCAPE!' : 'YOU DISSOLVED', W/2, H/2-12);
   ctx.font = '14px monospace'; ctx.fillStyle = '#555';
   ctx.fillText(won ? 'Enter  →  new maze' : 'Enter  →  try again (same maze)', W/2, H/2+28);
-  ctx.fillText('R  →  ' + (won ? 'same maze' : 'new maze'), W/2, H/2+52);
+  ctx.fillText(won ? 'R  →  same maze' : 'N  →  new maze', W/2, H/2+52);
 }
 
 // ─── RESET ───────────────────────────────────────────────────────────────────
@@ -1460,6 +1501,7 @@ function softReset() {
   gateModal = null;
   sparks.length = 0;
   moving = false; walkTimer = 0; floodStarted = false;
+  dissolveStartTime = -1;
   activeEffects = [];
   smokeGates = {};
   gatePuzzles = {};
