@@ -662,7 +662,7 @@ window.addEventListener('keydown', e => {
       return;
     }
   }
-  if (e.key === 'Enter') {
+  if (e.key === 'Enter' || e.key === ' ') {
     if (gateModal) {
       if (gateModal.phase === 'done') { gateModal = null; return; }
       if (gateModal.phase === 'puzzle' && gateModal.slot1 && gateModal.slot2) {
@@ -1297,7 +1297,7 @@ function drawGateModal() {
     ctx.fillStyle = gg;
     ctx.beginPath(); ctx.roundRect(dx, slideY, doorW, doorH, corners); ctx.fill();
 
-    ctx.strokeStyle = accent; ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#c4880a'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.roundRect(dx, slideY, doorW, doorH, corners); ctx.stroke();
 
     ctx.strokeStyle = 'rgba(200,160,40,0.22)'; ctx.lineWidth = 1;
