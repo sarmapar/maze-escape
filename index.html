@@ -463,15 +463,15 @@ function drawIntro() {
     ctx.beginPath(); ctx.ellipse(bx - 5, by - 6, 7, 4, -0.4, 0, Math.PI*2); ctx.fill();
 
     ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#c47f00';
-    ctx.fillText('YOU ARE A SLIME.', W/2, cy + 98);
+    ctx.fillText('YOU ARE A SLIME', W/2, cy + 98);
 
     ctx.font = '12px monospace'; ctx.fillStyle = '#aaa';
-    ctx.fillText('you have escaped the laboratory.', W/2, cy + 126);
-    ctx.fillText('the scientists are not pleased.', W/2, cy + 145);
-    ctx.fillText('they\'ve released a flood to stop you.', W/2, cy + 164);
+    ctx.fillText('You have escaped the laboratory.', W/2, cy + 126);
+    ctx.fillText('The scientists are not pleased.', W/2, cy + 145);
+    ctx.fillText('They\'ve released a flood to stop you.', W/2, cy + 164);
 
     // "reach the [mini exit block] on the outer edge before you dissolve."
-    const rp1 = 'reach the ', rp2 = ' on the outer edge before you dissolve.';
+    const rp1 = 'reach the ', rp2 = ' on the outer edge before you dissolve';
     ctx.font = '12px monospace';
     const rw1 = ctx.measureText(rp1).width, rw2 = ctx.measureText(rp2).width;
     const rsz = 13, rtotalW = rw1 + rsz + rw2;
@@ -490,123 +490,43 @@ function drawIntro() {
     ctx.fillText(rp2, rbx + rsz, rty);
     ctx.textAlign = 'center';
 
-    // Page dots (3)
-    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 - 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2,      cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    // Page dots (2)
+    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 - 5, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 5, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
     ctx.font = '10px monospace'; ctx.fillStyle = '#444';
     ctx.fillText('press any key  →', W/2, cy + ch - 12);
 
-  } else if (introPage === 1) {
+  } else {
+    // Page 2 — controls + quick gate hint
     ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00';
     ctx.fillText('HOW TO PLAY', W/2, cy + 30);
 
     const row = (key, desc, y) => {
       ctx.textAlign = 'left';
       ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#f0c040';
-      ctx.fillText(key, cx + 30, y);
+      ctx.fillText(key, cx + 40, y);
       ctx.font = '11px monospace'; ctx.fillStyle = '#aaa';
-      ctx.fillText(desc, cx + 160, y);
+      ctx.fillText(desc, cx + 200, y);
       ctx.textAlign = 'center';
     };
 
-    row('WASD / arrows',  'move',                          cy + 58);
-    row('Enter / click',  'interact with a gate next to you',       cy + 78);
-    row('R',              'restart (same maze)',            cy + 98);
-    row('N',              'new maze',                       cy + 118);
-    row('C',              'cheatsheet (puzzle reference)',  cy + 138);
+    row('WASD / Arrows',        'move',              cy + 55);
+    row('Enter / Space / Click', 'open a gate',      cy + 75);
+    row('R',                    'restart same maze',  cy + 95);
+    row('N',                    'new maze',           cy + 115);
+    row('C',                    'operator reference', cy + 135);
+    row('T',                    'tutorial',           cy + 155);
 
     ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx+20, cy+152); ctx.lineTo(cx+cw-20, cy+152); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+168); ctx.lineTo(cx+cw-20, cy+168); ctx.stroke();
 
-    ctx.font = '11px monospace'; ctx.fillStyle = '#666';
-    ctx.fillText('click a golden gate, or stand beside it and press Enter', W/2, cy + 170);
-    ctx.fillText('flood rises from the center — don\'t dawdle', W/2, cy + 190);
+    ctx.font = '11px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
+    ctx.fillText('gold gates block your path — solve the puzzle to pass', W/2, cy + 184);
+    ctx.fillText('the flood rises from the center — don\'t dawdle', W/2, cy + 202);
 
-    // Page dots (3)
-    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2,      cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.font = '10px monospace'; ctx.fillStyle = '#444';
-    ctx.fillText('press any key  →', W/2, cy + ch - 12);
-
-  } else {
-    // Page 3 — puzzle visual
-    ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00';
-    ctx.fillText('THE GATE PUZZLE', W/2, cy + 28);
-
-    // Mini pipe + slot diagram
-    const mx = cx + 30, mw = cw - 60;
-    const midX = mx + mw / 2;
-    const pipeY = cy + 46, pipeH = 52;
-    const pipeW = 120;
-
-    // Blue pipe (left)
-    ctx.fillStyle = '#080e1e';
-    ctx.beginPath(); ctx.roundRect(mx, pipeY, pipeW, pipeH, 6); ctx.fill();
-    ctx.strokeStyle = '#5599ff'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.roundRect(mx, pipeY, pipeW, pipeH, 6); ctx.stroke();
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#5599ff'; ctx.textAlign = 'center';
-    ctx.fillText('x = 12', mx + pipeW/2, pipeY + 18);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#4488cc';
-    ctx.fillText('SPEED', mx + pipeW/2, pipeY + 34);
-    ctx.fillText('positive effect', mx + pipeW/2, pipeY + 47);
-
-    // Red pipe (right)
-    const rpx = mx + mw - pipeW;
-    ctx.fillStyle = '#1e0808';
-    ctx.beginPath(); ctx.roundRect(rpx, pipeY, pipeW, pipeH, 6); ctx.fill();
-    ctx.strokeStyle = '#ff5555'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.roundRect(rpx, pipeY, pipeW, pipeH, 6); ctx.stroke();
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#ff5555'; ctx.textAlign = 'center';
-    ctx.fillText('x = 5', rpx + pipeW/2, pipeY + 18);
-    ctx.font = '10px monospace'; ctx.fillStyle = '#cc4444';
-    ctx.fillText('SLOW', rpx + pipeW/2, pipeY + 34);
-    ctx.fillText('negative effect', rpx + pipeW/2, pipeY + 47);
-
-    // Slot boxes in the middle
-    const slotW = 34, slotH = 22, slotY = pipeY + pipeH/2 - slotH/2;
-    const slot1X = midX - slotW - 28, slot2X = midX + 28;
-
-    // Connector label
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
-    ctx.fillText('&&', midX, slotY + 15);
-
-    // Slot 1
-    ctx.fillStyle = '#1a1a1a';
-    ctx.beginPath(); ctx.roundRect(slot1X, slotY, slotW, slotH, 4); ctx.fill();
-    ctx.strokeStyle = '#5599ff'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(slot1X, slotY, slotW, slotH, 4); ctx.stroke();
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#f0c040'; ctx.textAlign = 'center';
-    ctx.fillText('?', slot1X + slotW/2, slotY + 15);
-
-    // Slot 2
-    ctx.fillStyle = '#1a1a1a';
-    ctx.beginPath(); ctx.roundRect(slot2X, slotY, slotW, slotH, 4); ctx.fill();
-    ctx.strokeStyle = '#ff5555'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(slot2X, slotY, slotW, slotH, 4); ctx.stroke();
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#f0c040'; ctx.textAlign = 'center';
-    ctx.fillText('?', slot2X + slotW/2, slotY + 15);
-
-    // Labels under slots
-    ctx.font = '9px monospace'; ctx.fillStyle = '#555'; ctx.textAlign = 'center';
-    ctx.fillText('x ? 7', slot1X + slotW/2, slotY + slotH + 12);
-    ctx.fillText('x ? 3', slot2X + slotW/2, slotY + slotH + 12);
-
-    ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx+20, cy+128); ctx.lineTo(cx+cw-20, cy+128); ctx.stroke();
-
-    ctx.font = '11px monospace'; ctx.fillStyle = '#aaa'; ctx.textAlign = 'center';
-    ctx.fillText('pick an operator for each slot  (<  >  ==  !=  <=  >=)', W/2, cy + 147);
-    ctx.font = '11px monospace'; ctx.fillStyle = '#666';
-    ctx.fillText('satisfy a condition → that pipe opens with its effect', W/2, cy + 166);
-    ctx.fillText('satisfy both → both pipes open', W/2, cy + 185);
-    ctx.fillText('satisfy neither → gate stays sealed', W/2, cy + 204);
-
-    // Page dots (3)
-    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2,      cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 + 10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    // Page dots (2)
+    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 5, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 + 5, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
     ctx.font = '10px monospace'; ctx.fillStyle = '#444';
     ctx.fillText('press any key to start', W/2, cy + ch - 12);
   }
@@ -623,7 +543,7 @@ let floodStarted = false;
 // ─── INPUT ───────────────────────────────────────────────────────────────────
 const keys = {};
 function dismissIntro() {
-  if (introPage < 2) { introPage++; return; }
+  if (introPage < 1) { introPage++; return; }
   showIntro = false;
 }
 
@@ -1098,7 +1018,7 @@ function drawGateModal() {
   // Hint text
   ctx.font = '11px monospace'; ctx.textAlign = 'center';
   ctx.fillStyle = (m.slot1 && m.slot2) ? 'rgba(240,200,80,0.72)' : '#555';
-  ctx.fillText('↑↓ switch slots  ·  Enter → lock in', W/2, hintY + 12);
+  ctx.fillText('Tab switch slots  ·  Enter → lock in', W/2, hintY + 12);
   hz.activate = null;
 
   ctx.restore(); // end puzAlpha
@@ -1309,15 +1229,6 @@ function drawGateModal() {
       ctx.beginPath(); ctx.moveTo(lx2, slideY+14); ctx.lineTo(lx2, slideY+doorH-14); ctx.stroke();
     }
 
-    const ax = dx + doorW/2, ay = slideY + 28;
-    ctx.fillStyle = 'rgba(255,255,255,0.60)';
-    ctx.beginPath();
-    ctx.moveTo(ax,      ay - 11);
-    ctx.lineTo(ax - 11, ay + 4);
-    ctx.lineTo(ax + 11, ay + 4);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.42)';
-    ctx.fillRect(ax-3, ay+4, 6, 9);
 
     ctx.restore();
   };
@@ -1549,10 +1460,13 @@ function drawMaze() {
         const t = Math.min(1, dist / Math.max(1, spreadR));
         // soft edge: fade in over fadeZone cells
         const edgeFade = dist < spreadR ? 1 : 1 - (dist - spreadR) / fadeZone;
-        const r = Math.round(62  * (1-t) + 30  * t);
-        const g = Math.round(207 * (1-t) + 150 * t);
-        const b = Math.round(62  * (1-t) + 190 * t);
-        ctx.fillStyle = `rgba(${r},${g},${b},${(0.72 - t * 0.25) * edgeFade})`;
+        // bright slime green flash at death cell, fades to gradient over ~1s
+        const ageBright = Math.max(0, 1 - elapsed * 0.9) * (1 - t);
+        const r = Math.round((62  * (1-t) + 30  * t) * (1-ageBright) + 62  * ageBright);
+        const g = Math.round((207 * (1-t) + 150 * t) * (1-ageBright) + 255 * ageBright);
+        const b = Math.round((62  * (1-t) + 190 * t) * (1-ageBright) + 62  * ageBright);
+        const alpha = Math.min(1, (0.72 - t * 0.25) * edgeFade + ageBright * 0.3);
+        ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
         ctx.fillRect(col*CELL, row*CELL, CELL, CELL);
       }
     }
@@ -1568,7 +1482,7 @@ function drawMaze() {
     ctx.fill();
   }
 
-  if (!gameWon) drawSlime(player.x * CELL, player.y * CELL);
+  if (!gameWon && !gameLost) drawSlime(player.x * CELL, player.y * CELL);
   ctx.restore();
 }
 
@@ -1721,12 +1635,12 @@ function reset() {
   softReset();
 }
 
-document.getElementById('restart-btn').addEventListener('click', softReset);
-document.getElementById('newmaze-btn').addEventListener('click', reset);
-document.getElementById('cheatsheet-btn').addEventListener('click', () => { showCheatsheet = !showCheatsheet; });
+document.getElementById('restart-btn').addEventListener('click', e => { softReset(); e.currentTarget.blur(); });
+document.getElementById('newmaze-btn').addEventListener('click', e => { reset(); e.currentTarget.blur(); });
+document.getElementById('cheatsheet-btn').addEventListener('click', e => { showCheatsheet = !showCheatsheet; e.currentTarget.blur(); });
 const toggleMode = () => { hardMode = !hardMode; setToggle(); reset(); };
-document.getElementById('toggle-compare').addEventListener('click', toggleMode);
-document.getElementById('toggle-gates').addEventListener('click',   toggleMode);
+document.getElementById('toggle-compare').addEventListener('click', e => { toggleMode(); e.currentTarget.blur(); });
+document.getElementById('toggle-gates').addEventListener('click',   e => { toggleMode(); e.currentTarget.blur(); });
 function setToggle() {
   document.getElementById('toggle-compare').classList.toggle('active', !hardMode);
   document.getElementById('toggle-gates').classList.toggle('active', hardMode);
