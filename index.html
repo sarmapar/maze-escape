@@ -965,7 +965,7 @@ function drawGateModal() {
   ctx.fillStyle = 'rgba(0,0,0,0.72)';
   ctx.fillRect(0, 0, W, H);
 
-  const mw=680, mh=470, mx=W/2-mw/2, my=H/2-mh/2;
+  const mw=680, mh=510, mx=W/2-mw/2, my=H/2-mh/2;
   const m = gateModal;
 
   const hz = m.hitZones;
@@ -995,6 +995,20 @@ function drawGateModal() {
   ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#1a0e00';
   ctx.fillText('GATE LOCK', W/2, my+19);
 
+  // ── Sub-header instruction (evaluate early so we can use blueOpen/redOpen here)
+  { const blueOpenEarly = (m.slot1 && m.slot2) ? evalPuzzle(m, m.blueVal) : null;
+    const redOpenEarly  = (m.slot1 && m.slot2) ? evalPuzzle(m, m.redVal)  : null;
+    const bothFilled = m.slot1 && m.slot2;
+    const instrText = !bothFilled        ? 'pick operators for each row · fill both slots to activate'
+      : (blueOpenEarly || redOpenEarly)  ? 'the gate is open!  Hit Enter to lock in your choice'
+      :                                    'neither door opens · try different operators';
+    const instrCol  = !bothFilled        ? '#cccccc'
+      : (blueOpenEarly || redOpenEarly)  ? 'rgba(240,200,80,0.9)'
+      :                                    '#777777';
+    ctx.font = '12px monospace'; ctx.fillStyle = instrCol;
+    ctx.fillText(instrText, W/2, my + 42);
+  }
+
   // ── Operator button dims (used for layout math)
   const opBW = 52, opBH = 27, opGap = 5;
   const rowW2 = 3*(opBW+opGap) - opGap;
@@ -1017,7 +1031,7 @@ function drawGateModal() {
   // ── Puzzle box layout (TOP section) — centered between side panels
   const slotW = 56, slotH = 28;
   const pboxX = W/2 - 140, pboxW = 280;   // wide enough for hint text
-  const pboxY = my + 36;
+  const pboxY = my + 52;
   const r1Y      = pboxY + 14;
   const connY    = r1Y + slotH + 6;
   const r2Y      = connY + 22;
@@ -1102,7 +1116,7 @@ function drawGateModal() {
     });
   });
 
-  // Hint text
+  // Key hint
   ctx.font = '11px monospace'; ctx.textAlign = 'center';
   ctx.fillStyle = (m.slot1 && m.slot2) ? 'rgba(240,200,80,0.72)' : '#555';
   ctx.fillText('Tab switch slots  ·  Enter → lock in', W/2, hintY + 12);
@@ -1798,24 +1812,29 @@ function drawSlime(wx, wy) {
   const now = frameTime;
   const effs = activeEffects.filter(e => e.endTime > now);
   if (effs.length > 0) {
-    const hasRed  = effs.some(e => EFFECT_META[e.type].pipe === 'red');
-    const hasBlue = effs.some(e => EFFECT_META[e.type].pipe === 'blue');
-    const glowRGB = (hasRed && hasBlue) ? '204,85,255' : hasRed ? '255,68,68' : '68,136,255';
-    const soonest = effs.reduce((a,b) => a.endTime < b.endTime ? a : b);
-    const timeLeft = soonest.endTime - now;
-    const blinking = timeLeft < 2.5;
-    // Envelope shrinks 1→0 over the blink window so each pulse is dimmer than the last,
-    // and the final pulse fades all the way to 0
-    const envelope = blinking ? timeLeft / 2.5 : 1.0;
-    const pulse    = blinking ? (0.5 + 0.5 * Math.sin(now * 9)) : 1.0;
-    const alpha    = envelope * pulse;
-    const auraR = R + 13;
-    const grad = ctx.createRadialGradient(0, 0, R - 2, 0, 0, auraR);
-    grad.addColorStop(0,    `rgba(${glowRGB},${alpha})`);
-    grad.addColorStop(0.45, `rgba(${glowRGB},${alpha * 0.55})`);
-    grad.addColorStop(1,    `rgba(${glowRGB},0)`);
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(0, 0, auraR, 0, Math.PI*2); ctx.fill();
+    const redEffs  = effs.filter(e => EFFECT_META[e.type].pipe === 'red');
+    const blueEffs = effs.filter(e => EFFECT_META[e.type].pipe === 'blue');
+    const redEnd   = redEffs.length  ? redEffs.reduce((a,b)  => a.endTime > b.endTime ? a : b).endTime  : 0;
+    const blueEnd  = blueEffs.length ? blueEffs.reduce((a,b) => a.endTime > b.endTime ? a : b).endTime : 0;
+    const redAlpha  = redEnd  ? Math.min(1.0, (redEnd  - now) / 2.5) : 0;
+    const blueAlpha = blueEnd ? Math.min(1.0, (blueEnd - now) / 2.5) : 0;
+    const totalA = redAlpha + blueAlpha;
+    if (totalA > 0) {
+      // Interpolate colour: t=0 → red, t=0.5 → purple, t=1 → blue
+      const t  = blueAlpha / totalA;
+      const r1 = [255, 68, 68], mid = [204, 85, 255], b1 = [68, 136, 255];
+      const seg = t < 0.5 ? [r1, mid, t * 2] : [mid, b1, (t - 0.5) * 2];
+      const c = seg[0].map((v, i) => Math.round(v + (seg[1][i] - v) * seg[2]));
+      const glowRGB = c.join(',');
+      const alpha   = Math.max(redAlpha, blueAlpha);
+      const auraR = R + 13;
+      const grad = ctx.createRadialGradient(0, 0, R - 2, 0, 0, auraR);
+      grad.addColorStop(0,    `rgba(${glowRGB},${alpha})`);
+      grad.addColorStop(0.45, `rgba(${glowRGB},${alpha * 0.55})`);
+      grad.addColorStop(1,    `rgba(${glowRGB},0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(0, 0, auraR, 0, Math.PI*2); ctx.fill();
+    }
   }
 
   // Body
@@ -2032,24 +2051,8 @@ function drawHUD() {
     ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(60,140,230,0.9)';
     ctx.fillText(`flood in ${secsLeft}s  ·  reach the ★ on the edge`, W/2, by+bh+15);
   } else {
-    // Timer until the next depth layer floods
-    const elapsed = currentFloodDepth / floodBase();
-    const rampFrac = Math.min(1, elapsed / 45);
-    const currentRate = floodBase() + (floodMax() - floodBase()) * rampFrac;
-    const depthToNext = (Math.floor(currentFloodDepth) + 1) - currentFloodDepth;
-    const secsToNext = depthToNext / currentRate;
-    ctx.font = '11px monospace';
-    const timerStr = `next block in ${secsToNext.toFixed(1)}s`;
-    const suffix = `  ·  reach the ★ on the edge`;
-    const timerCol = secsToNext <= 0.5 ? 'rgba(220,60,60,0.9)' : 'rgba(80,150,220,0.75)';
-    const totalW2 = ctx.measureText(timerStr + suffix).width;
-    const tx = W/2 - totalW2/2;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = timerCol;
-    ctx.fillText(timerStr, tx, by+bh+15);
-    ctx.fillStyle = 'rgba(80,150,220,0.75)';
-    ctx.fillText(suffix, tx + ctx.measureText(timerStr).width, by+bh+15);
-    ctx.textAlign = 'center';
+    ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(80,150,220,0.75)';
+    ctx.fillText(`reach the ★ on the edge`, W/2, by+bh+15);
   }
 
   if (floodPct > 0.6) {
