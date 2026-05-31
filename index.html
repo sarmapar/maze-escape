@@ -43,8 +43,8 @@ canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,
   content: attr(data-tip);
   position: absolute;
   bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%);
-  background: #1a1a1a; border: 1px solid #555;
-  color: #aaa; font: 10px monospace;
+  background: #d8d8d8; border: 1px solid #aaa;
+  color: #222; font: 10px monospace;
   padding: 4px 9px; border-radius: 4px;
   white-space: nowrap; pointer-events: none;
   opacity: 0; transition: opacity 0.15s; transition-delay: 0s;
@@ -493,7 +493,7 @@ function drawCheatsheet() {
 }
 
 function drawIntro() {
-  const cw = 460, ch = 355;
+  const cw = 460, ch = 372;
   const cx = W/2 - cw/2, cy = H/2 - ch/2;
 
   // Dim backdrop
@@ -546,13 +546,15 @@ function drawIntro() {
     ctx.fillStyle = '#e0e0e0'; ctx.textAlign = 'center';
     ctx.fillText('before you dissolve', W/2, rty + 20);
 
-    // Page dots (2)
-    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 - 5, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 5, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    // Page dots (3)
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i === 0 ? '#c47f00' : '#333';
+      ctx.beginPath(); ctx.arc(W/2 + (i-1)*10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    }
     ctx.font = '10px monospace'; ctx.fillStyle = '#444';
     ctx.fillText('press any key  →', W/2, cy + ch - 12);
 
-  } else {
+  } else if (introPage === 1) {
     // Page 2 — controls + quick gate hint
     ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00';
     ctx.fillText('HOW TO PLAY', W/2, cy + 30);
@@ -571,39 +573,76 @@ function drawIntro() {
     row('R',                    'restart same maze',  cy + 95);
     row('N',                    'new maze',           cy + 115);
     row('C',                    'operator reference', cy + 135);
-    row('T',                    'gate tutorial',           cy + 155);
+    row('T',                    'gate tutorial',      cy + 155);
+    row('I',                    'game instructions', cy + 175);
 
     ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx+20, cy+168); ctx.lineTo(cx+cw-20, cy+168); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+190); ctx.lineTo(cx+cw-20, cy+190); ctx.stroke();
 
     ctx.font = '11px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
-    ctx.fillText('gold gates block your path — solve the puzzle to pass', W/2, cy + 184);
-    ctx.fillText('the flood rises from the center — don\'t dawdle', W/2, cy + 200);
+    ctx.fillText('gold gates block your path — solve the puzzle to pass', W/2, cy + 206);
+    ctx.fillText('the flood rises from the center — don\'t dawdle', W/2, cy + 222);
 
     ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx+20, cy+215); ctx.lineTo(cx+cw-20, cy+215); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+238); ctx.lineTo(cx+cw-20, cy+238); ctx.stroke();
 
-    ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
-    ctx.fillText('GAME MODES', W/2, cy + 230);
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#999'; ctx.textAlign = 'center';
+    ctx.fillText('GAME MODES', W/2, cy + 256);
 
     const mrow = (label, col, desc, y) => {
       ctx.textAlign = 'left';
-      ctx.font = 'bold 10px monospace'; ctx.fillStyle = col;
+      ctx.font = 'bold 11px monospace'; ctx.fillStyle = col;
       ctx.fillText(label, cx + 40, y);
-      ctx.font = '10px monospace'; ctx.fillStyle = '#666';
-      ctx.fillText(desc, cx + 40 + 76, y);
+      ctx.font = '11px monospace'; ctx.fillStyle = '#888';
+      ctx.fillText(desc, cx + 40 + 84, y);
       ctx.textAlign = 'center';
     };
-    mrow('practice ', '#888', '· no flood — explore freely',           cy + 248);
-    mrow('normal   ', '#888', '· flood pauses while solving a gate',   cy + 263);
-    mrow('challenge', '#888',    '· flood never stops  (default)',         cy + 278);
+    mrow('practice ', '#6db86d', '· no flood — explore freely',         cy + 276);
+    mrow('normal   ', '#c4a040', '· flood pauses while solving a gate', cy + 294);
+    mrow('challenge', '#aaa',    '· flood never stops  (default)',       cy + 312);
 
-    ctx.font = '12px monospace'; ctx.fillStyle = '#e0e0e0';
-    ctx.fillText('press T at any time to access the gate tutorial', W/2, cy + 305);
+    // Page dots (3)
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i === 1 ? '#c47f00' : '#333';
+      ctx.beginPath(); ctx.arc(W/2 + (i-1)*10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.font = '10px monospace'; ctx.fillStyle = '#444';
+    ctx.fillText('press any key  →', W/2, cy + ch - 12);
 
-    // Page dots (2)
-    ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 5, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 + 5, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+  } else {
+    // Page 3 — gate tutorial pitch
+    ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#c47f00';
+    ctx.fillText('GATE PUZZLES', W/2, cy + 38);
+
+    ctx.font = '12px monospace'; ctx.fillStyle = '#888';
+    ctx.fillText('Gold gates block paths through the maze.', W/2, cy + 66);
+    ctx.fillText('Approach one and press Enter/Space to open it.', W/2, cy + 84);
+
+    ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+100); ctx.lineTo(cx+cw-20, cy+100); ctx.stroke();
+
+    ctx.font = '12px monospace'; ctx.fillStyle = '#999';
+    ctx.fillText('Pick operators for each row so the inequalities', W/2, cy + 122);
+    ctx.fillText('pass for the right x values.', W/2, cy + 140);
+    ctx.fillText('Each color unlocks a different door.', W/2, cy + 158);
+
+    ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+174); ctx.lineTo(cx+cw-20, cy+174); ctx.stroke();
+
+    ctx.font = '13px monospace'; ctx.fillStyle = '#bbb';
+    ctx.fillText('Not sure where to start?', W/2, cy + 198);
+
+    ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#e8b84b';
+    ctx.fillText('press T  to open the tutorial', W/2, cy + 232);
+
+    ctx.font = '11px monospace'; ctx.fillStyle = '#555';
+    ctx.fillText('covers all operators with interactive examples', W/2, cy + 272);
+
+    // Page dots (3)
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i === 2 ? '#c47f00' : '#333';
+      ctx.beginPath(); ctx.arc(W/2 + (i-1)*10, cy+ch-28, 3, 0, Math.PI*2); ctx.fill();
+    }
     ctx.font = '10px monospace'; ctx.fillStyle = '#444';
     ctx.fillText('press any key to start', W/2, cy + ch - 12);
   }
@@ -620,7 +659,7 @@ let floodStarted = false;
 // ─── INPUT ───────────────────────────────────────────────────────────────────
 const keys = {};
 function dismissIntro() {
-  if (introPage < 1) { introPage++; return; }
+  if (introPage < 2) { introPage++; return; }
   showIntro = false;
 }
 
@@ -633,7 +672,7 @@ window.addEventListener('keydown', e => {
   }
   keys[e.key] = true;
   if (showIntro) {
-    if ((e.key === 't' || e.key === 'T') && introPage === 1) { showIntro = false; openTutorial(); return; }
+    if ((e.key === 't' || e.key === 'T') && introPage >= 1) { showIntro = false; openTutorial(); return; }
     dismissIntro(); return;
   }
   if (tutorialActive) {
@@ -673,6 +712,7 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && gateModal) { gateModal = null; return; }
   if (e.key === 'c' || e.key === 'C') { showCheatsheet = !showCheatsheet; return; }
   if (e.key === 't' || e.key === 'T') { openTutorial(); return; }
+  if (e.key === 'i' || e.key === 'I') { showIntro = true; introPage = 0; return; }
   if (!gateModal && (e.key === 'r' || e.key === 'R')) { softReset(); return; }
   if (!gateModal && (e.key === 'n' || e.key === 'N')) { reset(); return; }
   if (gateModal && gateModal.phase === 'puzzle') {
