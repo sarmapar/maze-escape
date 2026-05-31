@@ -752,6 +752,16 @@ let tutDoorSlide = 0, tutBlueSlide = 0, tutRedSlide = 0;
 let tutOpHitZones = [], tutSlotHitZones = [];
 let tutConnector = 'AND', tutConnectorHZ = null, tutConnectorBoxHZ = null, tutExitHZ = null;
 let tutWasBothOpen = false;
+function cycleConnector() {
+  if (hardMode) {
+    tutConnector = LOGIC_GATES[(LOGIC_GATES.indexOf(tutConnector) + 1) % LOGIC_GATES.length];
+  } else {
+    tutConnector = tutConnector === 'AND' ? 'OR' : 'AND';
+  }
+}
+function connectorLabel() {
+  return hardMode ? tutConnector : (tutConnector === 'AND' ? '&&' : '||');
+}
 const sparks  = [];
 
 // ─── GATE MODAL LOGIC ────────────────────────────────────────────────────────
@@ -843,13 +853,13 @@ canvas.addEventListener('click', e => {
     if (tutConnectorHZ) {
       const hz = tutConnectorHZ;
       if (cx>=hz.x && cx<=hz.x+hz.w && cy>=hz.y && cy<=hz.y+hz.h) {
-        tutConnector = tutConnector === 'AND' ? 'OR' : 'AND'; return;
+        cycleConnector(); return;
       }
     }
     if (tutConnectorBoxHZ) {
       const hz = tutConnectorBoxHZ;
       if (cx>=hz.x && cx<=hz.x+hz.w && cy>=hz.y && cy<=hz.y+hz.h) {
-        tutConnector = tutConnector === 'AND' ? 'OR' : 'AND'; return;
+        cycleConnector(); return;
       }
     }
     // Exit button (page 3)
@@ -1585,8 +1595,8 @@ function drawTutorialPage2() {
   // ── Connector toggle hint (appears after both slots filled)
   tutConnectorHZ = null; tutConnectorBoxHZ = null;
   if (bothFilled) {
-    const connLabel = tutConnector === 'AND' ? '&&' : '||';
-    const hint = `click  ${connLabel}  to change`;
+    const connLabel = connectorLabel();
+    const hint = `click  ${connLabel}  to practice with other connectors`;
     ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
     ctx.fillStyle = '#c4a020';
     ctx.fillText(hint, W/2, connHintY);
@@ -1625,7 +1635,7 @@ function drawTutorialPage2() {
   drawRow(row1Y, tutSlot1, N1, tutSelectedSlot === 1, 1);
 
   ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00'; ctx.textAlign = 'center';
-  const connBoxLabel = tutConnector === 'AND' ? '&&' : '||';
+  const connBoxLabel = connectorLabel();
   ctx.fillText(connBoxLabel, W/2, connTextY);
   { const tw = ctx.measureText(connBoxLabel).width; tutConnectorBoxHZ = { x: W/2 - tw/2 - 10, y: connTextY - 14, w: tw + 20, h: 20 }; }
 
