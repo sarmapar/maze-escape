@@ -1452,7 +1452,7 @@ function drawTutorial() {
 
   // Connector label
   ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00'; ctx.textAlign = 'center';
-  ctx.fillText('&&', W/2, connTextY);
+  ctx.fillText(hardMode ? 'AND' : '&&', W/2, connTextY);
 
   drawRow(row2Y, tutSlot2, N2, tutSelectedSlot === 2, 2);
 
