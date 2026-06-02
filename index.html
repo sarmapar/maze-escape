@@ -906,7 +906,7 @@ canvas.addEventListener('touchend', e => {
   const dt = Date.now() - touchStartTime;
   const moved = Math.hypot(e.changedTouches[0].clientX - touchStartX,
                            e.changedTouches[0].clientY - touchStartY);
-  if (dt < 250 && moved < 12 && !showIntro && !gameWon && !gameLost) {
+  if (dt < 250 && moved < 12 && !showIntro) {
     canvas.dispatchEvent(new MouseEvent('click', {
       clientX: e.changedTouches[0].clientX,
       clientY: e.changedTouches[0].clientY,
