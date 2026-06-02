@@ -777,6 +777,7 @@ const canvasToCell = (px, py) => {
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let gameWon = false, gameLost = false, frameTime = 0;
+let endScreenHZ = null;
 let dissolveStartTime = -1, dissolveCol = 0, dissolveRow = 0;
 let winBall = null; // bouncing ball animation on win screen
 let gateModal = null;
@@ -881,9 +882,9 @@ canvas.addEventListener('touchstart', e => {
   touchStartTime = Date.now(); touchStartX = t.clientX; touchStartY = t.clientY;
   if (showIntro) { dismissIntro(); return; }
   if (gameWon || gameLost) return;
-  const cx = t.clientX, cy = t.clientY;
+  const anchorX = t.clientX, anchorY = t.clientY;
   touchMoveTimer = setTimeout(() => {
-    const dir = getTouchDirection(cx, cy);
+    const dir = dirFromAnchor(anchorX, anchorY, anchorX, anchorY);
     touchDir = { up: false, down: false, left: false, right: false };
     touchDir[dir] = true;
   }, 150);
@@ -892,7 +893,7 @@ canvas.addEventListener('touchstart', e => {
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
   const t = e.touches[0];
-  const dir = getTouchDirection(t.clientX, t.clientY);
+  const dir = dirFromAnchor(t.clientX, t.clientY, touchStartX, touchStartY);
   touchDir = { up: false, down: false, left: false, right: false };
   touchDir[dir] = true;
 }, { passive: false });
@@ -915,21 +916,26 @@ canvas.addEventListener('touchend', e => {
 }, { passive: false });
 
 // ─── MOUSE DIRECTIONAL MOVEMENT ──────────────────────────────────────────────
-let mouseDown = false, mouseMoveTimer = null;
+let mouseDown = false, mouseMoveTimer = null, mouseAnchorX = 0, mouseAnchorY = 0;
+function dirFromAnchor(clientX, clientY, anchorCX, anchorCY) {
+  const dx = clientX - anchorCX, dy = clientY - anchorCY;
+  if (Math.abs(dy) >= Math.abs(dx)) return dy < 0 ? 'up' : 'down';
+  return dx < 0 ? 'left' : 'right';
+}
 canvas.addEventListener('mousedown', e => {
   if (showIntro || gameWon || gameLost || gateModal || tutorialActive) return;
   mouseDown = true;
-  const cx = e.clientX, cy = e.clientY;
+  mouseAnchorX = e.clientX; mouseAnchorY = e.clientY;
   mouseMoveTimer = setTimeout(() => {
     if (!mouseDown) return;
-    const dir = getTouchDirection(cx, cy);
+    const dir = dirFromAnchor(e.clientX, e.clientY, mouseAnchorX, mouseAnchorY);
     touchDir = { up: false, down: false, left: false, right: false };
     touchDir[dir] = true;
   }, 150);
 });
 canvas.addEventListener('mousemove', e => {
   if (!mouseDown || !Object.values(touchDir).some(v => v)) return;
-  const dir = getTouchDirection(e.clientX, e.clientY);
+  const dir = dirFromAnchor(e.clientX, e.clientY, mouseAnchorX, mouseAnchorY);
   touchDir = { up: false, down: false, left: false, right: false };
   touchDir[dir] = true;
 });
@@ -942,6 +948,13 @@ window.addEventListener('mouseup', () => {
 // ─── CLICK ───────────────────────────────────────────────────────────────────
 canvas.addEventListener('click', e => {
   if (showIntro) { dismissIntro(); return; }
+  if ((gameWon || gameLost) && endScreenHZ) {
+    const r = canvas.getBoundingClientRect();
+    const cx = (e.clientX-r.left)*(W/r.width), cy = (e.clientY-r.top)*(H/r.height);
+    if (inBox(cx, cy, endScreenHZ.btn1)) { endScreenHZ.won ? reset() : softReset(); return; }
+    if (inBox(cx, cy, endScreenHZ.btn2)) { endScreenHZ.won ? softReset() : reset(); return; }
+    return;
+  }
   if (gameWon || gameLost) return;
   const r  = canvas.getBoundingClientRect();
   const cx = (e.clientX-r.left)*(W/r.width);
@@ -2190,12 +2203,10 @@ function drawMaze() {
         const t = Math.min(1, dist / Math.max(1, spreadR));
         // soft edge: fade in over fadeZone cells
         const edgeFade = dist < spreadR ? 1 : 1 - (dist - spreadR) / fadeZone;
-        // bright slime green flash at death cell, fades to gradient over ~1s
-        const ageBright = Math.max(0, 1 - elapsed * 0.9) * (1 - t);
-        const r = Math.round((62  * (1-t) + 30  * t) * (1-ageBright) + 62  * ageBright);
-        const g = Math.round((207 * (1-t) + 150 * t) * (1-ageBright) + 255 * ageBright);
-        const b = Math.round((62  * (1-t) + 190 * t) * (1-ageBright) + 62  * ageBright);
-        const alpha = Math.min(1, (0.72 - t * 0.25) * edgeFade + ageBright * 0.3);
+        const r = Math.round(62  * (1-t) + 30  * t);
+        const g = Math.round(207 * (1-t) + 150 * t);
+        const b = Math.round(62  * (1-t) + 190 * t);
+        const alpha = Math.min(1, (0.72 - t * 0.25) * edgeFade);
         ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
         ctx.fillRect(col*CELL, row*CELL, CELL, CELL);
       }
@@ -2317,9 +2328,22 @@ function drawEndScreen(won) {
   ctx.font = 'bold 52px monospace';
   ctx.fillStyle = won ? '#3ecf3e' : '#3a9eea';
   ctx.fillText(won ? 'YOU ESCAPE!' : 'YOU DISSOLVED', W/2, H/2-12);
-  ctx.font = '14px monospace'; ctx.fillStyle = '#555';
-  ctx.fillText(won ? 'Enter  →  new maze' : 'Enter  →  try again (same maze)', W/2, H/2+28);
-  ctx.fillText(won ? 'R  →  same maze' : 'N  →  new maze', W/2, H/2+52);
+
+  // Buttons
+  const btnW = 180, btnH = 38, btnGap = 16;
+  const btn1X = W/2 - btnW - btnGap/2, btn2X = W/2 + btnGap/2, btnY = H/2 + 32;
+  const drawBtn = (x, label, accent) => {
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.beginPath(); ctx.roundRect(x, btnY, btnW, btnH, 6); ctx.fill();
+    ctx.strokeStyle = accent; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(x, btnY, btnW, btnH, 6); ctx.stroke();
+    ctx.font = '13px monospace'; ctx.fillStyle = accent; ctx.textAlign = 'center';
+    ctx.fillText(label, x + btnW/2, btnY + 24);
+  };
+  const accent = won ? '#3ecf3e' : '#3a9eea';
+  drawBtn(btn1X, won ? 'new maze  [Enter]' : 'try again  [Enter]', '#666');
+  drawBtn(btn2X, won ? 'same maze  [R]'    : 'new maze  [N]',      '#666');
+  endScreenHZ = { btn1: {x:btn1X,y:btnY,w:btnW,h:btnH}, btn2: {x:btn2X,y:btnY,w:btnW,h:btnH}, won };
 }
 
 // ─── RESET ───────────────────────────────────────────────────────────────────
@@ -2442,7 +2466,7 @@ function loop(ts) {
       const darkEffs = activeEffects.filter(e => e.type === 'DARKNESS' && e.endTime > frameTime);
       if (darkEffs.length > 0) {
         const darkEnd   = darkEffs.reduce((a,b) => a.endTime > b.endTime ? a : b).endTime;
-        const darkAlpha = Math.min(1.0, (darkEnd - frameTime) / 2.5);
+        const darkAlpha = Math.min(1.0, (darkEnd - frameTime) / 0.6);
         const lightR    = 85 + (560 - 85) * (1 - darkAlpha);
         const grad = ctx.createRadialGradient(W/2, H/2, lightR * 0.55, W/2, H/2, lightR * 1.35);
         grad.addColorStop(0, 'rgba(0,0,0,0)');
