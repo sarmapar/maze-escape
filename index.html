@@ -59,10 +59,8 @@ canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,
 #controls-left  { color: #777;    font: 11px monospace; letter-spacing: 0.3px; }
 #controls-right { color: #777;    font: 11px monospace; letter-spacing: 0.3px; }
 #btns  { margin-top: 2px; display: flex; align-items: center; gap: 6px; }
-#mode-outer { display: flex; flex-direction: column; align-items: center; gap: 3px; margin-top: 4px; }
-#mode-row  { display: flex; align-items: flex-start; gap: 6px; color: #666; font: 11px monospace; letter-spacing: 0.3px; }
-#mode-label { margin-top: 4px; }
-#mode-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+#pm-wrap { display: flex; flex-direction: column; align-items: center; gap: 7px; justify-self: start; }
+#pm-label { color: #777; font: 11px monospace; letter-spacing: 0.3px; margin-bottom: -3px; }
 #restart-btn, #newmaze-btn, #cheatsheet-btn, #tutorial-btn {
   background: none; border: 1px solid #555; color: #888;
   font: 11px monospace; padding: 3px 10px; border-radius: 4px;
@@ -84,7 +82,13 @@ canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,
 </head>
 <body>
 <div id="top-bar">
-  <div></div>
+  <div id="pm-wrap">
+    <div id="pm-label">puzzle mode:</div>
+    <div id="mode-toggle">
+      <span id="toggle-compare" class="active">basic boolean</span>
+      <span id="toggle-gates">logic gates</span>
+    </div>
+  </div>
   <div id="flood-center">
     <div id="flood-pct-label">0% flooded</div>
     <div id="flood-bar-wrap"><div id="flood-bar-fill"></div></div>
@@ -111,17 +115,6 @@ canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,
     <button id="newmaze-btn">new maze [N]</button>
     <button id="cheatsheet-btn">cheatsheet [C]</button>
     <button id="tutorial-btn">tutorial [T]</button>
-  </div>
-  <div id="mode-outer">
-    <div id="mode-row"><span id="mode-label">puzzle mode:</span>
-      <div id="mode-wrap">
-        <div id="mode-toggle">
-          <span id="toggle-compare" class="active">basic boolean</span>
-          <span id="toggle-gates">logic gates</span>
-        </div>
-        <div id="mode-note">resets the maze</div>
-      </div>
-    </div>
   </div>
 </div>
 <script>
@@ -572,7 +565,7 @@ function drawIntro() {
     row('Enter / Space / Click', 'open a gate',      cy + 75);
     row('R',                    'restart same maze',  cy + 95);
     row('N',                    'new maze',           cy + 115);
-    row('C',                    'operator reference', cy + 135);
+    row('C',                    'operator reference cheatsheet', cy + 135);
     row('T',                    'gate tutorial',      cy + 155);
     row('I',                    'game instructions', cy + 175);
 
@@ -612,31 +605,31 @@ function drawIntro() {
   } else {
     // Page 3 — gate tutorial pitch
     ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#c47f00';
-    ctx.fillText('GATE PUZZLES', W/2, cy + 38);
+    ctx.fillText('GATE PUZZLES', W/2, cy + 46);
 
     ctx.font = '12px monospace'; ctx.fillStyle = '#888';
-    ctx.fillText('Gold gates block paths through the maze.', W/2, cy + 66);
-    ctx.fillText('Approach one and press Enter/Space to open it.', W/2, cy + 84);
+    ctx.fillText('Gold gates block paths through the maze.', W/2, cy + 80);
+    ctx.fillText('Approach one and press Enter/Space to open it.', W/2, cy + 100);
 
     ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx+20, cy+100); ctx.lineTo(cx+cw-20, cy+100); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+120); ctx.lineTo(cx+cw-20, cy+120); ctx.stroke();
 
     ctx.font = '12px monospace'; ctx.fillStyle = '#999';
-    ctx.fillText('Pick operators for each row so the inequalities', W/2, cy + 122);
-    ctx.fillText('pass for the right x values.', W/2, cy + 140);
-    ctx.fillText('Each color unlocks a different door.', W/2, cy + 158);
+    ctx.fillText('Each gate has two blanks to fill', W/2, cy + 148);
+    ctx.fillText('Choose symbols to solve the locks', W/2, cy + 168);
+    ctx.fillText('Each color that works lift its gate.', W/2, cy + 188);
 
     ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx+20, cy+174); ctx.lineTo(cx+cw-20, cy+174); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+20, cy+210); ctx.lineTo(cx+cw-20, cy+210); ctx.stroke();
 
     ctx.font = '13px monospace'; ctx.fillStyle = '#bbb';
-    ctx.fillText('Not sure where to start?', W/2, cy + 198);
+    ctx.fillText('Not sure what the symbols mean?', W/2, cy + 242);
 
     ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#e8b84b';
-    ctx.fillText('press T  to open the tutorial', W/2, cy + 232);
+    ctx.fillText('press T to try the tutorial', W/2, cy + 272);
 
     ctx.font = '11px monospace'; ctx.fillStyle = '#555';
-    ctx.fillText('covers all operators with interactive examples', W/2, cy + 272);
+    ctx.fillText('to practice with examples at any time', W/2, cy + 306);
 
     // Page dots (3)
     for (let i = 0; i < 3; i++) {
@@ -929,7 +922,7 @@ const passable = (x, y) => {
 
 // ─── MOVEMENT ────────────────────────────────────────────────────────────────
 function updatePlayer(dt) {
-  if (gateModal||gameWon||gameLost) return;
+  if (gateModal||gameWon||gameLost||showIntro) return;
 
   const rev = hasEffect('REVERSE') ? -1 : 1;
   let dx = 0, dy = 0;
@@ -1122,8 +1115,8 @@ function drawGateModal() {
   { const blueOpenEarly = (m.slot1 && m.slot2) ? evalPuzzle(m, m.blueVal) : null;
     const redOpenEarly  = (m.slot1 && m.slot2) ? evalPuzzle(m, m.redVal)  : null;
     const bothFilled = m.slot1 && m.slot2;
-    const instrText = !bothFilled        ? 'pick operators for each row · fill both slots to activate'
-      : (blueOpenEarly || redOpenEarly)  ? 'the gate is open!  Hit Enter to lock in your choice'
+    const instrText = !bothFilled        ? 'Fill both slots with symbols to activate'
+      : (blueOpenEarly || redOpenEarly)  ? 'The gate is open! Hit Enter/Space to lock in your choice'
       :                                    'neither door opens · try different operators';
     const instrCol  = !bothFilled        ? '#cccccc'
       : (blueOpenEarly || redOpenEarly)  ? 'rgba(240,200,80,0.9)'
@@ -2276,7 +2269,7 @@ document.getElementById('restart-btn').addEventListener('click', e => { softRese
 document.getElementById('newmaze-btn').addEventListener('click', e => { reset(); e.currentTarget.blur(); });
 document.getElementById('cheatsheet-btn').addEventListener('click', e => { showCheatsheet = !showCheatsheet; e.currentTarget.blur(); });
 document.getElementById('tutorial-btn').addEventListener('click',   e => { openTutorial(); e.currentTarget.blur(); });
-const toggleMode = () => { hardMode = !hardMode; setToggle(); reset(); };
+const toggleMode = () => { hardMode = !hardMode; setToggle(); };
 document.getElementById('toggle-compare').addEventListener('click', e => { toggleMode(); e.currentTarget.blur(); });
 document.getElementById('toggle-gates').addEventListener('click',   e => { toggleMode(); e.currentTarget.blur(); });
 function setToggle() {
@@ -2364,13 +2357,18 @@ function loop(ts) {
     if (showCheatsheet) drawCheatsheet();
   } else {
     drawMaze();
-    if (hasEffect('DARKNESS')) {
-      const lightR = 85;
-      const grad = ctx.createRadialGradient(W/2, H/2, lightR * 0.55, W/2, H/2, lightR * 1.35);
-      grad.addColorStop(0,   'rgba(0,0,0,0)');
-      grad.addColorStop(1,   'rgba(0,0,0,0.96)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, H);
+    {
+      const darkEffs = activeEffects.filter(e => e.type === 'DARKNESS' && e.endTime > frameTime);
+      if (darkEffs.length > 0) {
+        const darkEnd   = darkEffs.reduce((a,b) => a.endTime > b.endTime ? a : b).endTime;
+        const darkAlpha = Math.min(1.0, (darkEnd - frameTime) / 2.5);
+        const lightR    = 85 + (560 - 85) * (1 - darkAlpha);
+        const grad = ctx.createRadialGradient(W/2, H/2, lightR * 0.55, W/2, H/2, lightR * 1.35);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, `rgba(0,0,0,${(0.96 * darkAlpha).toFixed(3)})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+      }
     }
     updateTopBar();
     drawHUD();
