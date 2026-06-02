@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Slime Maze</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -14,7 +15,8 @@ body {
   justify-content: center;
   height: 100vh;
 }
-canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,0.5); }
+canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,0.5); max-width: 100%; height: auto; touch-action: none; }
+#top-bar, #hud-area { width: min(880px, 100vw); }
 /* ── top bar (above canvas) ── */
 #top-bar {
   display: grid; grid-template-columns: 1fr auto 1fr;
@@ -107,7 +109,7 @@ canvas { display: block; border-radius: 10px; box-shadow: 0 6px 28px rgba(0,0,0,
 <div id="hud-area">
   <div id="top-row">
     <div id="controls-left">WASD / arrows to move</div>
-    <div id="objective">reach the ★ on the edge to escape before you dissolve</div>
+    <div id="objective">find the ★ on the edge to escape before you dissolve</div>
     <div id="controls-right">Enter / click to inspect gate</div>
   </div>
   <div id="btns">
@@ -517,8 +519,8 @@ function drawIntro() {
     ctx.fillText('The scientists are not pleased.', W/2, cy + 165);
     ctx.fillText('They\'ve released a flood to stop you.', W/2, cy + 184);
 
-    // Line 1: "reach the [★] on the outer edge"
-    const rp1 = 'reach the ', rp2 = ' on the outer edge';
+    // Line 1: "find the [★] on the outer edge"
+    const rp1 = 'find the ', rp2 = ' on the outer edge';
     ctx.font = '13px monospace';
     const rw1 = ctx.measureText(rp1).width, rw2 = ctx.measureText(rp2).width;
     const rsz = 14, rtotalW = rw1 + rsz + rw2;
@@ -615,9 +617,8 @@ function drawIntro() {
     ctx.beginPath(); ctx.moveTo(cx+20, cy+120); ctx.lineTo(cx+cw-20, cy+120); ctx.stroke();
 
     ctx.font = '12px monospace'; ctx.fillStyle = '#999';
-    ctx.fillText('Each gate has two blanks to fill', W/2, cy + 148);
-    ctx.fillText('Choose symbols to solve the locks', W/2, cy + 168);
-    ctx.fillText('Each color that works lift its gate.', W/2, cy + 188);
+    ctx.fillText('Each gate is locked behind a puzzle.', W/2, cy + 158);
+    ctx.fillText('Choose symbols to fill in the blanks & unlock the gates!', W/2, cy + 178);
 
     ctx.strokeStyle = '#2e2e2e'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cx+20, cy+210); ctx.lineTo(cx+cw-20, cy+210); ctx.stroke();
@@ -628,8 +629,8 @@ function drawIntro() {
     ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#e8b84b';
     ctx.fillText('press T to try the tutorial', W/2, cy + 272);
 
-    ctx.font = '11px monospace'; ctx.fillStyle = '#555';
-    ctx.fillText('to practice with examples at any time', W/2, cy + 306);
+    ctx.font = '11px monospace'; ctx.fillStyle = '#bbb';
+    ctx.fillText('& practice with examples at any time', W/2, cy + 302);
 
     // Page dots (3)
     for (let i = 0; i < 3; i++) {
@@ -840,11 +841,12 @@ function handleModalClick(cx, cy) {
       }
     }
   }
-  if (inBox(cx, cy, hz.activate) && m.slot1 && m.slot2) {
+  // Click outside the symbols box and puzzle box = confirm if both slots filled and a door opens
+  if (m.slot1 && m.slot2 && !(hz.opsBox && inBox(cx, cy, hz.opsBox)) && !(hz.puzBox && inBox(cx, cy, hz.puzBox))) {
     const redOpen  = evalPuzzle(m, m.redVal);
     const blueOpen = evalPuzzle(m, m.blueVal);
     m.result = redOpen && blueOpen ? 'both' : blueOpen ? 'blue' : redOpen ? 'red' : 'none';
-    resolveGate();
+    if (m.result !== 'none') { resolveGate(); gateModal = null; }
   }
 }
 
@@ -859,6 +861,83 @@ function resolveGate() {
   }
   m.phase = 'done';
 }
+
+// ─── TOUCH MOVEMENT ──────────────────────────────────────────────────────────
+let touchDir = { up: false, down: false, left: false, right: false };
+let touchStartTime = 0, touchStartX = 0, touchStartY = 0, touchMoveTimer = null;
+
+function getTouchDirection(clientX, clientY) {
+  const r  = canvas.getBoundingClientRect();
+  const cx = (clientX - r.left) * (W / r.width);
+  const cy = (clientY - r.top)  * (H / r.height);
+  const dx = cx - W / 2, dy = cy - H / 2;
+  if (Math.abs(dy) >= Math.abs(dx)) return dy < 0 ? 'up' : 'down';
+  return dx < 0 ? 'left' : 'right';
+}
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  touchStartTime = Date.now(); touchStartX = t.clientX; touchStartY = t.clientY;
+  if (showIntro) { dismissIntro(); return; }
+  if (gameWon || gameLost) return;
+  const cx = t.clientX, cy = t.clientY;
+  touchMoveTimer = setTimeout(() => {
+    const dir = getTouchDirection(cx, cy);
+    touchDir = { up: false, down: false, left: false, right: false };
+    touchDir[dir] = true;
+  }, 150);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const dir = getTouchDirection(t.clientX, t.clientY);
+  touchDir = { up: false, down: false, left: false, right: false };
+  touchDir[dir] = true;
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  clearTimeout(touchMoveTimer);
+  touchDir = { up: false, down: false, left: false, right: false };
+  // Short tap (< 250ms, barely moved) → treat as Enter/interact
+  const dt = Date.now() - touchStartTime;
+  const moved = Math.hypot(e.changedTouches[0].clientX - touchStartX,
+                           e.changedTouches[0].clientY - touchStartY);
+  if (dt < 250 && moved < 12 && !showIntro && !gameWon && !gameLost) {
+    canvas.dispatchEvent(new MouseEvent('click', {
+      clientX: e.changedTouches[0].clientX,
+      clientY: e.changedTouches[0].clientY,
+      bubbles: true
+    }));
+  }
+}, { passive: false });
+
+// ─── MOUSE DIRECTIONAL MOVEMENT ──────────────────────────────────────────────
+let mouseDown = false, mouseMoveTimer = null;
+canvas.addEventListener('mousedown', e => {
+  if (showIntro || gameWon || gameLost || gateModal || tutorialActive) return;
+  mouseDown = true;
+  const cx = e.clientX, cy = e.clientY;
+  mouseMoveTimer = setTimeout(() => {
+    if (!mouseDown) return;
+    const dir = getTouchDirection(cx, cy);
+    touchDir = { up: false, down: false, left: false, right: false };
+    touchDir[dir] = true;
+  }, 150);
+});
+canvas.addEventListener('mousemove', e => {
+  if (!mouseDown || !Object.values(touchDir).some(v => v)) return;
+  const dir = getTouchDirection(e.clientX, e.clientY);
+  touchDir = { up: false, down: false, left: false, right: false };
+  touchDir[dir] = true;
+});
+window.addEventListener('mouseup', () => {
+  mouseDown = false;
+  clearTimeout(mouseMoveTimer);
+  touchDir = { up: false, down: false, left: false, right: false };
+});
 
 // ─── CLICK ───────────────────────────────────────────────────────────────────
 canvas.addEventListener('click', e => {
@@ -926,10 +1005,10 @@ function updatePlayer(dt) {
 
   const rev = hasEffect('REVERSE') ? -1 : 1;
   let dx = 0, dy = 0;
-  if (keys['ArrowUp']   ||keys['w']||keys['W']) dy -= rev;
-  if (keys['ArrowDown'] ||keys['s']||keys['S']) dy += rev;
-  if (keys['ArrowLeft'] ||keys['a']||keys['A']) dx -= rev;
-  if (keys['ArrowRight']||keys['d']||keys['D']) dx += rev;
+  if (keys['ArrowUp']   ||keys['w']||keys['W']||touchDir.up)    dy -= rev;
+  if (keys['ArrowDown'] ||keys['s']||keys['S']||touchDir.down)  dy += rev;
+  if (keys['ArrowLeft'] ||keys['a']||keys['A']||touchDir.left)  dx -= rev;
+  if (keys['ArrowRight']||keys['d']||keys['D']||touchDir.right) dx += rev;
 
   const hasSlow = hasEffect('SLOW'), hasSpd = hasEffect('SPEED');
   const spd = (hasSlow && hasSpd) ? SPEED : hasSlow ? SPEED*0.45 : hasSpd ? SPEED*1.85 : SPEED;
@@ -1174,6 +1253,7 @@ function drawGateModal() {
   ctx.save();
   ctx.globalAlpha = puzAlpha;
 
+  if (interactive) hz.puzBox = { x: pboxX, y: pboxY, w: pboxW, h: pboxH };
   ctx.fillStyle = 'rgba(255,255,255,0.03)';
   ctx.beginPath(); ctx.roundRect(pboxX, pboxY, pboxW, pboxH, 8); ctx.fill();
   ctx.strokeStyle = 'rgba(196,127,0,0.28)'; ctx.lineWidth = 1;
@@ -1231,6 +1311,7 @@ function drawGateModal() {
       if (interactive) hz.ops.push({ x:ox, y:oy, w:opBW, h:opBH, op });
     });
   });
+  if (interactive) hz.opsBox = { x: W/2 - rowW2/2 - 4, y: opBaseY - 4, w: rowW2 + 8, h: 2*(opBH+opGap) - opGap + 8 };
 
   // Key hint
   ctx.font = '11px monospace'; ctx.textAlign = 'center';
