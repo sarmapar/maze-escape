@@ -902,17 +902,25 @@ canvas.addEventListener('touchend', e => {
   e.preventDefault();
   clearTimeout(touchMoveTimer);
   touchDir = { up: false, down: false, left: false, right: false };
-  // Short tap (< 250ms, barely moved) → treat as Enter/interact
+  const touch = e.changedTouches[0];
   const dt = Date.now() - touchStartTime;
-  const moved = Math.hypot(e.changedTouches[0].clientX - touchStartX,
-                           e.changedTouches[0].clientY - touchStartY);
-  if (dt < 250 && moved < 12 && !showIntro) {
-    canvas.dispatchEvent(new MouseEvent('click', {
-      clientX: e.changedTouches[0].clientX,
-      clientY: e.changedTouches[0].clientY,
-      bubbles: true
-    }));
+  const moved = Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY);
+  if (dt >= 250 || moved >= 12) return;
+  // Short tap — handle directly
+  if (showIntro) { dismissIntro(); return; }
+  // End screen buttons — handle directly without synthetic click
+  if ((gameWon || gameLost) && endScreenHZ) {
+    const r = canvas.getBoundingClientRect();
+    const cx = (touch.clientX - r.left) * (W / r.width);
+    const cy = (touch.clientY - r.top)  * (H / r.height);
+    if (inBox(cx, cy, endScreenHZ.btn1)) { endScreenHZ.won ? reset() : softReset(); return; }
+    if (inBox(cx, cy, endScreenHZ.btn2)) { endScreenHZ.won ? softReset() : reset(); return; }
+    return;
   }
+  // Everything else — synthetic click for gate modals, operator selection, etc.
+  canvas.dispatchEvent(new MouseEvent('click', {
+    clientX: touch.clientX, clientY: touch.clientY, bubbles: true
+  }));
 }, { passive: false });
 
 // ─── MOUSE DIRECTIONAL MOVEMENT ──────────────────────────────────────────────
