@@ -142,7 +142,7 @@ function buildSpiralMaze(w, h, seed) {
 
   const rw = (w - 1) / 2, rh = (h - 1) / 2; // room grid: 16×16
   const visited = Array.from({length: rh}, () => new Array(rw).fill(false));
-  const crx = (rw - 1) / 2, cry = (rh - 1) / 2; // room-coord center (7.5, 7.5)
+  const crx = (rw - 1) / 2, cry = (rh - 1) / 2; // room-coord center (8, 8)
   const maxD = Math.sqrt(crx * crx + cry * cry);
 
   function carve(r, c) {
@@ -594,7 +594,7 @@ function drawIntro() {
     };
     mrow('practice ', '#6db86d', '· no flood — explore freely',         cy + 276);
     mrow('normal   ', '#c4a040', '· flood pauses while solving a gate', cy + 294);
-    mrow('challenge', '#aaa',    '· flood never stops  (default)',       cy + 312);
+    mrow('challenge', '#aaa',    '· flood never stops',                  cy + 312);
 
     // Page dots (3)
     for (let i = 0; i < 3; i++) {
@@ -703,13 +703,14 @@ window.addEventListener('keydown', e => {
     }
     return;
   }
-  if (e.key === 'Escape' && gateModal) { gateModal = null; return; }
+  if (e.key === 'Escape' && gateModal) { firstGatePuzzle = false; gateModal = null; return; }
   if (e.key === 'c' || e.key === 'C') { showCheatsheet = !showCheatsheet; return; }
   if (e.key === 't' || e.key === 'T') { openTutorial(); return; }
   if (e.key === 'i' || e.key === 'I') { showIntro = true; introPage = 0; return; }
   if (!gateModal && (e.key === 'r' || e.key === 'R')) { softReset(); return; }
   if (!gateModal && (e.key === 'n' || e.key === 'N')) { reset(); return; }
   if (gateModal && gateModal.phase === 'puzzle') {
+    firstGatePuzzle = false;
     const opKey = { ',':'<', '<':'<', '.':'>', '>':'>', '=':'==', '+':'==', '1':'!=', '!':'!=' };
     const op = opKey[e.key];
     if (op) {
@@ -734,6 +735,7 @@ window.addEventListener('keydown', e => {
   }
   if (e.key === 'Enter' || e.key === ' ') {
     if (gateModal) {
+      firstGatePuzzle = false;
       if (gateModal.phase === 'done') { gateModal = null; return; }
       if (gateModal.phase === 'puzzle' && gateModal.slot1 && gateModal.slot2) {
         const m = gateModal;
@@ -741,7 +743,7 @@ window.addEventListener('keydown', e => {
         const blueOpen = evalPuzzle(m, m.blueVal);
         m.result = (redOpen && blueOpen) ? 'both' : blueOpen ? 'blue' : redOpen ? 'red' : 'none';
         resolveGate();
-        gateModal = null; // close immediately — no second Enter needed
+        firstGatePuzzle = false; gateModal = null; // close immediately — no second Enter needed
       }
       return;
     }
@@ -781,6 +783,7 @@ let endScreenHZ = null;
 let dissolveStartTime = -1, dissolveCol = 0, dissolveRow = 0;
 let winBall = null; // bouncing ball animation on win screen
 let gateModal = null;
+let firstGatePuzzle = true; // show tutorial hint on the first gate opened
 let tutorialActive = false, tutPage = 0;
 let tutSlot1 = null, tutSlot2 = null, tutSelectedSlot = 1;
 let tutDoorSlide = 0, tutBlueSlide = 0, tutRedSlide = 0;
@@ -811,7 +814,7 @@ function openGateModal(col, row) {
     redEff: pz.redEff, blueEff: pz.blueEff,
     slot1: null, slot2: null, selectedSlot: 1,
     phase: 'puzzle', result: null,
-    blueSlide: 0, redSlide: 0, lastBothOpen: false, slideStartTime: null,
+    blueSlide: 0, redSlide: 0, lastBothOpen: false,
     hitZones: {}
   };
 }
@@ -819,6 +822,7 @@ function openGateModal(col, row) {
 function inBox(x, y, b) { return b && x>=b.x && x<=b.x+b.w && y>=b.y && y<=b.y+b.h; }
 
 function handleModalClick(cx, cy) {
+  firstGatePuzzle = false;
   const m = gateModal;
   if (m.phase === 'done') { gateModal = null; return; }
   const hz = m.hitZones;
@@ -847,7 +851,7 @@ function handleModalClick(cx, cy) {
     const redOpen  = evalPuzzle(m, m.redVal);
     const blueOpen = evalPuzzle(m, m.blueVal);
     m.result = redOpen && blueOpen ? 'both' : blueOpen ? 'blue' : redOpen ? 'red' : 'none';
-    if (m.result !== 'none') { resolveGate(); gateModal = null; }
+    if (m.result !== 'none') { firstGatePuzzle = false; resolveGate(); gateModal = null; }
   }
 }
 
@@ -867,14 +871,6 @@ function resolveGate() {
 let touchDir = { up: false, down: false, left: false, right: false };
 let touchStartTime = 0, touchStartX = 0, touchStartY = 0, touchMoveTimer = null;
 
-function getTouchDirection(clientX, clientY) {
-  const r  = canvas.getBoundingClientRect();
-  const cx = (clientX - r.left) * (W / r.width);
-  const cy = (clientY - r.top)  * (H / r.height);
-  const dx = cx - W / 2, dy = cy - H / 2;
-  if (Math.abs(dy) >= Math.abs(dx)) return dy < 0 ? 'up' : 'down';
-  return dx < 0 ? 'left' : 'right';
-}
 
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
@@ -1230,19 +1226,18 @@ function drawGateModal() {
   const rowW2 = 3*(opBW+opGap) - opGap;
 
   // ── Door frame geometry first (statW depends on frameX)
-  const doorW  = 100, seam = 0;
+  const doorW  = 100;
   const pillarW = 12, lintH = 14;
-  const doorX  = W/2 - doorW - seam/2;
-  const doorX2 = W/2 + seam/2;
+  const doorX  = W/2 - doorW;
+  const doorX2 = W/2;
   const frameX  = doorX - pillarW;
-  const frameW2 = doorW*2 + seam + pillarW*2;
+  const frameW2 = doorW*2 + pillarW*2;
 
   // ── Side panel widths — centered in the 200px gap between modal edge and puzzle box
   // pboxX = W/2 - 140 = mx + 200, so each side has exactly 200px to work with
   const statW  = 166;
-  const statWR = 166;
-  const blueStatX = mx + (200 - statW) / 2;       // centers card in the left 200px gap
-  const redStatX  = mx + mw - 200 + (200 - statWR) / 2; // centers card in the right 200px gap
+  const blueStatX = mx + (200 - statW) / 2;         // centers card in the left 200px gap
+  const redStatX  = mx + mw - 200 + (200 - statW) / 2; // centers card in the right 200px gap
 
   // ── Puzzle box layout (TOP section) — centered between side panels
   const slotW = 56, slotH = 28;
@@ -1338,7 +1333,6 @@ function drawGateModal() {
   ctx.font = '11px monospace'; ctx.textAlign = 'center';
   ctx.fillStyle = (m.slot1 && m.slot2) ? 'rgba(240,200,80,0.72)' : '#555';
   ctx.fillText('Tab switch slots  ·  Enter → lock in', W/2, hintY + 12);
-  hz.activate = null;
 
   ctx.restore(); // end puzAlpha
 
@@ -1376,7 +1370,7 @@ function drawGateModal() {
   };
 
   drawStatusPanel(blueStatX, statW,  r2Y, true);
-  drawStatusPanel(redStatX,  statWR, r2Y, false);
+  drawStatusPanel(redStatX,  statW,  r2Y, false);
 
   // ── Door passages — blend to purple only when both doors are (or were recently) open together.
   // This lets purple fade smoothly when one door closes, but keeps red/blue distinct when crossing.
@@ -1400,8 +1394,8 @@ function drawGateModal() {
     }
     if (purpleAlpha > 0.02) {
       ctx.save(); ctx.globalAlpha = purpleAlpha;
-      ctx.beginPath(); ctx.rect(doorX, doorY, doorW*2+seam, doorH); ctx.clip();
-      drawPipe(doorX, doorY, doorW*2+seam, doorH, '#cc55ff', '#1a0a28'); ctx.restore();
+      ctx.beginPath(); ctx.rect(doorX, doorY, doorW*2, doorH); ctx.clip();
+      drawPipe(doorX, doorY, doorW*2, doorH, '#cc55ff', '#1a0a28'); ctx.restore();
     }
   } else {
     // One or neither door open — draw each color independently, no purple mixing
@@ -1429,9 +1423,6 @@ function drawGateModal() {
 
     ctx.save();
     ctx.beginPath(); ctx.rect(dx, lintY, doorW, doorH + lintH); ctx.clip();
-
-    const willOpen  = isBlue ? blueOpen===true : redOpen===true;
-    const hasInput  = isBlue ? !!m.slot1 : !!m.slot2;
 
     const gg = ctx.createLinearGradient(dx, slideY, dx+doorW, slideY+doorH);
     gg.addColorStop(0,    '#b07810');
@@ -1491,6 +1482,22 @@ function drawGateModal() {
   ctx.fillRect(frameX, threshY, frameW2, 8);
   ctx.strokeStyle = '#ffdd60'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(frameX, threshY); ctx.lineTo(frameX+frameW2, threshY); ctx.stroke();
+
+  // ── First-time tutorial hint
+  if (firstGatePuzzle) {
+    const hw = 260, hh = 52, hx = W/2 - hw/2, hy = doorY + 10;
+    // box
+    ctx.fillStyle = 'rgba(14,10,4,0.93)';
+    ctx.beginPath(); ctx.roundRect(hx, hy, hw, hh, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(196,127,0,0.65)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(hx, hy, hw, hh, 7); ctx.stroke();
+    // line 1
+    ctx.font = '12px monospace'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
+    ctx.fillText('new to gate puzzles?', W/2, hy + 20);
+    // line 2
+    ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#e8b84b';
+    ctx.fillText('press T  for the tutorial', W/2, hy + 40);
+  }
 }
 
 // ─── TUTORIAL ────────────────────────────────────────────────────────────────
@@ -1709,7 +1716,6 @@ function drawTutorialPage2() {
   const rowW = 3*(opBW+opGap) - opGap;
   const opBaseY = boxY + boxH + 22;
   const doorW = 80, doorH = 100, lintH = 10;
-  const doorGap = 0;
   const doorBX = W/2 - doorW;
   const doorRX = W/2;
   const doorY  = opBaseY + 2*(opBH+opGap) + 46;
@@ -2409,9 +2415,9 @@ function loop(ts) {
     }
     updatePlayer(dt);
     // Expire smoke gates after 12 seconds
-    const now12 = performance.now();
+    const nowMs = performance.now();
     for (const key of Object.keys(smokeGates)) {
-      if (now12 - smokeGates[key].spawnTime > 12000) delete smokeGates[key];
+      if (nowMs - smokeGates[key].spawnTime > 12000) delete smokeGates[key];
     }
   }
 
@@ -2488,7 +2494,7 @@ function loop(ts) {
     if (gateModal)       drawGateModal();
     if (showCheatsheet)  drawCheatsheet();
     if (gameWon)         drawEndScreen(true);
-    if (gameLost)        drawEndScreen(false);
+    else if (gameLost)   drawEndScreen(false);
     if (showIntro)       drawIntro();
   }
 
