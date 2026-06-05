@@ -1,62 +1,43 @@
-# 🟢 Slime Maze Escape
+# Slime Maze Escape
 
-A browser-based maze escape game — no installs, no dependencies, just a single HTML file.
+A browser-based maze game built in a single HTML file. No installs, just open it and play!
 
-You play as a slime who has escaped a laboratory. The scientists are not pleased. Navigate through a procedurally generated maze, solve logic gate puzzles to unlock barriers, and reach the exit before the flood rises from the center and dissolves you.
+You're a slime who escaped a lab. The scientists are not pleased and they've flooded the place to stop you. Navigate the maze, solve the logic gate puzzles blocking your path, and get out before you dissolve.
 
----
+**[Play it here](https://www.sarmapar.com/maze-escape/)**
 
-## How to Play
+## How to play
 
-- **Move** — WASD or arrow keys (or click/hold to move on mobile)
-- **Open a gate** — walk up to a gold barrier and press Enter/Space or click it
-- **Solve the puzzle** — choose operators for each inequality row so the right colored values pass
-- **Escape** — find and reach the ★ on the outer edge of the maze
+- **Move** — WASD or arrow keys (click and hold on mobile)
+- **Open a gate** — walk up to a gold barrier and press Enter/Space, or click it
+- **Solve the puzzle** — pick operators for each row so the inequalities work out for the right colors, then confirm
+- **Escape** — find and reach the ★ on the outer edge
 
-### Game Modes
-| Mode | Description |
-|------|-------------|
-| **Practice** | No flood — explore freely |
-| **Normal** | Flood pauses while solving a gate puzzle |
-| **Challenge** | Flood never stops |
+### Game modes
+- **Practice** — no flood, just explore
+- **Normal** — flood pauses while you're solving a gate
+- **Challenge** — flood never stops
 
----
+## What's in it
 
-## Features
-
-- Procedurally generated mazes with guaranteed solvability
-- Logic gate puzzles in two difficulty modes: **basic boolean** (`<` `>` `≤` `≥`) and **logic gates** (`AND` `OR` `XOR` `NAND` `NOR` `XNOR`)
-- Rising flood mechanic that accelerates over time
-- Colored smoke gate effects that apply buffs/debuffs to the player (speed, slow, reverse controls, darkness, freeze, waterproofing)
-- Smooth canvas animations — particle effects, radial gradient auras, door slide animations, color-blending effects
-- Interactive built-in tutorial for the gate puzzle system
-- Mobile-friendly with touch and click-to-move controls
-- Three-page intro, in-game cheatsheet, and operator reference
-
----
+- Procedurally generated mazes
+- Gate puzzles in two modes: basic booleans (`&&` `||`) or logic gates (`AND` `OR` `XOR` `NAND` `NOR` `XNOR`)
+- A flood that rises from the center and speeds up over time
+- Colored smoke effects on solved gates that apply buffs and debuffs (speed, slow, reverse controls, darkness, freeze, waterproof)
+- Smooth canvas animations
+- Built-in, interactive tutorial
+- Mobile-friendly with click/touch controls
 
 ## Technical Details
 
-Built entirely in a **single HTML file** using the HTML5 Canvas 2D API and vanilla JavaScript — no frameworks, no build step, no dependencies. Everything from maze generation to particle rendering runs in a `requestAnimationFrame` game loop.
+Everything runs in a single `index.html` using vanilla JS and the HTML5 Canvas API. The maze is generated using depth-first search, which picks a direction and keeps going until it hits a dead end, then backtracks — this is what creates long winding corridors. The flood uses breadth-first search starting from the center, calculating the distance to every cell so it spreads outward evenly like ripples in water. Player effects use radial gradient color interpolation to blend between red, purple, and blue in real time.
 
-Highlights:
-- BFS-based flood fill for maze generation and flood depth tracking
-- Per-effect color interpolation using radial gradients (red → purple → blue based on remaining durations)
-- Darkness effect with an expanding light radius as it fades out
-- Gate puzzle evaluation supports both symbolic operators and named logic gates via a shared `evalConnector` function
+## Built with
 
----
+Built with support from [Claude Code](https://claude.ai/claude-code). I handled the game design, creative direction, and a lot of the tweaks directly in VS Code. Claude generated with the math-heavy canvas work like gradient calculations, color interpolation, and animation logic. This project involved a lot of back and forth, which is honestly a pretty fun way to build something.
 
-## Running It
 
-Just open `index.html` in any modern browser. No server required.
+## Thank you
+Thank you to my playtesters who gave ideas on UI design and information to include in the tutorial. Any feedback is appreciated, simply open an issue and I will get back to you! 
 
----
-
-## Built With
-
-This project was built with support from **[Claude Code](https://claude.ai/claude-code)** (Anthropic's AI coding assistant). The creative direction, game design decisions, playtesting, and many of the code tweaks were done directly — Claude handled the math-heavy rendering work (canvas animations, gradient calculations, color interpolation, game loop timing) and implemented features based on iterative feedback. A collaborative process where both sides contributed meaningfully.
-
----
-
-*Can you escape before you dissolve?*
+*gl;hf!*
