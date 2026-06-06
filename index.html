@@ -331,12 +331,12 @@ const isFlooded = (col, row) => {
 
 // ─── EFFECTS ─────────────────────────────────────────────────────────────────
 const EFFECT_META = {
-  SLOW:       { label:'SLOW',        color:'#ff4444', pipe:'red',  desc:'half speed'         },
-  REVERSE:    { label:'REVERSED',    color:'#ff6644', pipe:'red',  desc:'controls flipped'   },
-  DARKNESS:   { label:'DARKNESS',    color:'#ff9944', pipe:'red',  desc:'darkness falls'     },
-  SPEED:      { label:'SPEED',       color:'#44aaff', pipe:'blue', desc:'double speed'       },
-  WATERPROOF: { label:'WATERPROOF',  color:'#44ddff', pipe:'blue', desc:'flood immunity'     },
-  FREEZE:     { label:'FREEZE',      color:'#aaddff', pipe:'blue', desc:'flood pauses'       },
+  SLOW:       { label:'SLOW',        color:'#ff4444', door:'red',  desc:'half speed'         },
+  REVERSE:    { label:'REVERSED',    color:'#ff6644', door:'red',  desc:'controls flipped'   },
+  DARKNESS:   { label:'DARKNESS',    color:'#ff9944', door:'red',  desc:'darkness falls'     },
+  SPEED:      { label:'SPEED',       color:'#44aaff', door:'blue', desc:'double speed'       },
+  WATERPROOF: { label:'WATERPROOF',  color:'#44ddff', door:'blue', desc:'flood immunity'     },
+  FREEZE:     { label:'FREEZE',      color:'#aaddff', door:'blue', desc:'flood pauses'       },
 };
 const RED_EFFECTS  = ['SLOW','REVERSE','DARKNESS'];
 const BLUE_EFFECTS = ['SPEED','SPEED','WATERPROOF','WATERPROOF','FREEZE'];
@@ -670,8 +670,6 @@ window.addEventListener('keydown', e => {
     dismissIntro(); return;
   }
   if (tutorialActive) {
-    const tutAdvancePage = () => { tutPage++; tutSlot1=null; tutSlot2=null; tutSelectedSlot=1; tutConnector='AND'; tutConnectorHZ=null; tutConnectorBoxHZ=null; tutSlotHitZones=[]; tutExitHZ=null; tutBlueSlide=0; tutRedSlide=0; tutWasBothOpen=false; };
-    const tutBackPage    = () => { tutPage--; tutSlot1=null; tutSlot2=null; tutSelectedSlot=1; tutConnector='AND'; tutConnectorHZ=null; tutConnectorBoxHZ=null; tutSlotHitZones=[]; tutExitHZ=null; tutBlueSlide=0; tutRedSlide=0; tutWasBothOpen=false; };
     if (e.key === 'Escape') { closeTutorial(); return; }
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -788,7 +786,7 @@ let tutorialActive = false, tutPage = 0;
 let tutSlot1 = null, tutSlot2 = null, tutSelectedSlot = 1;
 let tutDoorSlide = 0, tutBlueSlide = 0, tutRedSlide = 0;
 let tutOpHitZones = [], tutSlotHitZones = [];
-let tutConnector = 'AND', tutConnectorHZ = null, tutConnectorBoxHZ = null, tutExitHZ = null;
+let tutConnector = 'AND', tutConnectorHZ = null, tutConnectorBoxHZ = null, tutExitHZ = null, tutNextHZ = null, tutBackHZ = null;
 let tutWasBothOpen = false;
 function cycleConnector() {
   if (hardMode) {
@@ -991,7 +989,19 @@ canvas.addEventListener('click', e => {
         cycleConnector(); return;
       }
     }
-    // Exit button (page 3)
+    // Next / back / exit nav buttons
+    if (tutNextHZ) {
+      const hz = tutNextHZ;
+      if (cx>=hz.x && cx<=hz.x+hz.w && cy>=hz.y && cy<=hz.y+hz.h) {
+        tutAdvancePage(); return;
+      }
+    }
+    if (tutBackHZ) {
+      const hz = tutBackHZ;
+      if (cx>=hz.x && cx<=hz.x+hz.w && cy>=hz.y && cy<=hz.y+hz.h) {
+        tutBackPage(); return;
+      }
+    }
     if (tutExitHZ) {
       const hz = tutExitHZ;
       if (cx>=hz.x && cx<=hz.x+hz.w && cy>=hz.y && cy<=hz.y+hz.h) {
@@ -1028,7 +1038,7 @@ function updatePlayer(dt) {
   if (keys['ArrowRight']||keys['d']||keys['D']||touchDir.right) dx += rev;
 
   const hasSlow = hasEffect('SLOW'), hasSpd = hasEffect('SPEED');
-  const spd = (hasSlow && hasSpd) ? SPEED : hasSlow ? SPEED*0.45 : hasSpd ? SPEED*1.85 : SPEED;
+  const spd = (hasSlow && hasSpd) ? SPEED : hasSlow ? SPEED*0.5 : hasSpd ? SPEED*1.85 : SPEED;
   moving = dx!==0||dy!==0;
   if (moving) floodStarted = true;
   if (moving) {
@@ -1091,8 +1101,8 @@ function updatePlayer(dt) {
   }
 }
 
-// ─── DRAW: PIPE FOG ──────────────────────────────────────────────────────────
-function drawPipe(x, y, w, h, fogColor, bgColor) {
+// ─── DRAW: DOOR SMOKE ────────────────────────────────────────────────────────
+function drawDoorSmoke(x, y, w, h, fogColor, bgColor) {
   ctx.fillStyle = bgColor;
   ctx.fillRect(x, y, w, h);
   ctx.save();
@@ -1132,45 +1142,6 @@ function drawPipe(x, y, w, h, fogColor, bgColor) {
   ctx.restore();
 }
 
-// ─── DRAW: HORIZ PIPE ────────────────────────────────────────────────────────
-// Animated horizontal pipe segment flowing bubbles/sparkles from x1 to x2.
-// flowDir: +1 = left→right, -1 = right→left
-function drawHorizPipe(x1, x2, y, fogCol, bgCol, flowDir) {
-  const ph = 28, py2 = y - ph/2, pipeLen = x2 - x1;
-  if (pipeLen <= 0) return;
-  ctx.fillStyle = bgCol;
-  ctx.fillRect(x1, py2, pipeLen, ph);
-  const grad = ctx.createLinearGradient(0, py2, 0, py2 + ph);
-  grad.addColorStop(0,   'rgba(255,255,255,0.07)');
-  grad.addColorStop(0.4, 'rgba(255,255,255,0)');
-  grad.addColorStop(1,   'rgba(0,0,0,0.28)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(x1, py2, pipeLen, ph);
-  ctx.fillStyle = 'rgba(255,255,255,0.10)';
-  ctx.fillRect(x1+1, py2+1, pipeLen-2, 3);
-  ctx.save();
-  ctx.beginPath(); ctx.rect(x1, py2, pipeLen, ph); ctx.clip();
-  for (let i = 0; i < 6; i++) {
-    const phase = (i/6)*Math.PI*2 + frameTime*(0.4+i*0.07);
-    const progress = ((frameTime*18/pipeLen + i/6) % 1 + 1) % 1;
-    const bx2 = flowDir > 0 ? x1+progress*pipeLen : x2-progress*pipeLen;
-    const fw = 6 + Math.sin(phase)*2;
-    ctx.globalAlpha = 0.22 + 0.22*Math.sin(phase+1.2);
-    ctx.fillStyle = fogCol;
-    ctx.beginPath(); ctx.ellipse(bx2, y+Math.sin(phase*1.4)*(ph*0.2), fw, fw*0.55, 0, 0, Math.PI*2); ctx.fill();
-  }
-  for (let i = 0; i < 4; i++) {
-    const blink = Math.sin(frameTime*3+i*1.4);
-    if (blink < 0) continue;
-    const sx = x1 + (((i*41 + frameTime*(flowDir>0?8:-8)) % pipeLen) + pipeLen) % pipeLen;
-    const sy2 = py2+4+(i%3)*((ph-8)/2);
-    ctx.globalAlpha = blink*0.6;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(sx, sy2, 1.5, 0, Math.PI*2); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-  ctx.restore();
-}
 
 // ─── DRAW: GATE MODAL ────────────────────────────────────────────────────────
 function drawGateModal() {
@@ -1385,29 +1356,29 @@ function drawGateModal() {
     if (blueAlpha > 0.02) {
       ctx.save(); ctx.globalAlpha = blueAlpha;
       ctx.beginPath(); ctx.rect(doorX,  doorY, doorW, doorH); ctx.clip();
-      drawPipe(doorX,  doorY, doorW, doorH, '#5599ff', '#0b1a32'); ctx.restore();
+      drawDoorSmoke(doorX,  doorY, doorW, doorH, '#5599ff', '#0b1a32'); ctx.restore();
     }
     if (redAlpha > 0.02) {
       ctx.save(); ctx.globalAlpha = redAlpha;
       ctx.beginPath(); ctx.rect(doorX2, doorY, doorW, doorH); ctx.clip();
-      drawPipe(doorX2, doorY, doorW, doorH, '#ff5555', '#2e0c0c'); ctx.restore();
+      drawDoorSmoke(doorX2, doorY, doorW, doorH, '#ff5555', '#2e0c0c'); ctx.restore();
     }
     if (purpleAlpha > 0.02) {
       ctx.save(); ctx.globalAlpha = purpleAlpha;
       ctx.beginPath(); ctx.rect(doorX, doorY, doorW*2, doorH); ctx.clip();
-      drawPipe(doorX, doorY, doorW*2, doorH, '#cc55ff', '#1a0a28'); ctx.restore();
+      drawDoorSmoke(doorX, doorY, doorW*2, doorH, '#cc55ff', '#1a0a28'); ctx.restore();
     }
   } else {
     // One or neither door open — draw each color independently, no purple mixing
     if (bSlide > 0.02) {
       ctx.save(); ctx.globalAlpha = bSlide;
       ctx.beginPath(); ctx.rect(doorX,  doorY, doorW, doorH); ctx.clip();
-      drawPipe(doorX,  doorY, doorW, doorH, '#5599ff', '#0b1a32'); ctx.restore();
+      drawDoorSmoke(doorX,  doorY, doorW, doorH, '#5599ff', '#0b1a32'); ctx.restore();
     }
     if (rSlide > 0.02) {
       ctx.save(); ctx.globalAlpha = rSlide;
       ctx.beginPath(); ctx.rect(doorX2, doorY, doorW, doorH); ctx.clip();
-      drawPipe(doorX2, doorY, doorW, doorH, '#ff5555', '#2e0c0c'); ctx.restore();
+      drawDoorSmoke(doorX2, doorY, doorW, doorH, '#ff5555', '#2e0c0c'); ctx.restore();
     }
   }
 
@@ -1501,6 +1472,9 @@ function drawGateModal() {
 }
 
 // ─── TUTORIAL ────────────────────────────────────────────────────────────────
+function tutAdvancePage() { tutPage++; tutSlot1=null; tutSlot2=null; tutSelectedSlot=1; tutConnector='AND'; tutConnectorHZ=null; tutConnectorBoxHZ=null; tutSlotHitZones=[]; tutExitHZ=null; tutNextHZ=null; tutBackHZ=null; tutBlueSlide=0; tutRedSlide=0; tutWasBothOpen=false; }
+function tutBackPage()    { tutPage--; tutSlot1=null; tutSlot2=null; tutSelectedSlot=1; tutConnector='AND'; tutConnectorHZ=null; tutConnectorBoxHZ=null; tutSlotHitZones=[]; tutExitHZ=null; tutNextHZ=null; tutBackHZ=null; tutBlueSlide=0; tutRedSlide=0; tutWasBothOpen=false; }
+
 function openTutorial() {
   tutorialActive = true; tutPage = 0;
   tutSlot1 = null; tutSlot2 = null; tutSelectedSlot = 1;
@@ -1509,6 +1483,80 @@ function openTutorial() {
   tutConnector = 'AND'; tutConnectorHZ = null; tutConnectorBoxHZ = null; tutExitHZ = null;
 }
 function closeTutorial() { tutorialActive = false; }
+
+function drawTutorialBanner() {
+  ctx.save();
+  ctx.font = 'bold 22px monospace';
+  ctx.fillStyle = 'rgba(196,127,0,0.13)';
+  ctx.textAlign = 'center';
+  ctx.save(); ctx.translate(24, H/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('T U T O R I A L', 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(W-24, H/2); ctx.rotate(Math.PI/2);
+  ctx.fillText('T U T O R I A L', 0, 0); ctx.restore();
+  ctx.restore();
+}
+
+// ─── TUTORIAL SHARED LAYOUT ──────────────────────────────────────────────────
+const TUT_SLOT_W = 44, TUT_SLOT_H = 28;
+const TUT_SLOT_CX = W/2 - TUT_SLOT_W/2;
+const TUT_BOX_W = 300, TUT_BOX_X = W/2 - TUT_BOX_W/2;
+const TUT_ROW1_Y = 130, TUT_ROW2_Y = 202, TUT_CONN_Y = 184;
+const TUT_BOX_Y = 108;
+const TUT_BOX_H = TUT_ROW2_Y + TUT_SLOT_H + 20 - TUT_BOX_Y; // 142
+const TUT_OP_BW = 48, TUT_OP_BH = 26, TUT_OP_GAP = 5;
+const TUT_ROW_W = 3*(TUT_OP_BW + TUT_OP_GAP) - TUT_OP_GAP;
+const TUT_OP_BASE_Y = TUT_BOX_Y + TUT_BOX_H + 30; // 280
+const TUT_DOOR_H = 100, TUT_LINT_H = 10;
+const TUT_DOOR_Y = TUT_OP_BASE_Y + 2*(TUT_OP_BH + TUT_OP_GAP) + 36; // 378
+
+function drawTutorialRow(y, slot, n, selected, slotNum) {
+  ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#bbb'; ctx.textAlign = 'right';
+  ctx.fillText('x', TUT_SLOT_CX - 10, y + 20);
+  ctx.fillStyle = selected ? '#1c1c1c' : '#111';
+  ctx.beginPath(); ctx.roundRect(TUT_SLOT_CX, y, TUT_SLOT_W, TUT_SLOT_H, 5); ctx.fill();
+  ctx.strokeStyle = selected ? '#ffffff' : slot ? '#c47f00' : '#444';
+  ctx.lineWidth = selected ? 2 : 1.5;
+  ctx.beginPath(); ctx.roundRect(TUT_SLOT_CX, y, TUT_SLOT_W, TUT_SLOT_H, 5); ctx.stroke();
+  ctx.font = 'bold 14px monospace';
+  ctx.fillStyle = slot ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
+  ctx.fillText(slot || '?', TUT_SLOT_CX + TUT_SLOT_W/2, y + 19);
+  ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#bbb'; ctx.textAlign = 'left';
+  ctx.fillText(`${n}`, TUT_SLOT_CX + TUT_SLOT_W + 10, y + 20);
+  tutSlotHitZones.push({ x: TUT_BOX_X, y: y - 4, w: TUT_BOX_W, h: TUT_SLOT_H + 8, slot: slotNum });
+}
+
+function drawTutorialPuzzleBox(glow) {
+  ctx.save();
+  if (glow) { ctx.shadowColor = '#44ff88'; ctx.shadowBlur = 24; }
+  ctx.strokeStyle = glow ? '#44ff88' : 'rgba(196,127,0,0.45)';
+  ctx.lineWidth = glow ? 2.5 : 1.5;
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  ctx.beginPath(); ctx.roundRect(TUT_BOX_X, TUT_BOX_Y, TUT_BOX_W, TUT_BOX_H, 10); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(TUT_BOX_X, TUT_BOX_Y, TUT_BOX_W, TUT_BOX_H, 10); ctx.stroke();
+  ctx.restore();
+}
+
+function drawTutorialOpButtons() {
+  ctx.font = '12px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
+  ctx.fillText('select a symbol to fill the slot', W/2, TUT_OP_BASE_Y - 14);
+  tutOpHitZones = [];
+  [OPERATORS.slice(0,3), OPERATORS.slice(3)].forEach((ops, ri) => {
+    ops.forEach((op, i) => {
+      const ox = W/2 - TUT_ROW_W/2 + i*(TUT_OP_BW+TUT_OP_GAP);
+      const oy = TUT_OP_BASE_Y + ri*(TUT_OP_BH+TUT_OP_GAP);
+      const active = (tutSelectedSlot === 1 ? tutSlot1 : tutSlot2) === op;
+      ctx.fillStyle = active ? '#1e2030' : '#181818';
+      ctx.beginPath(); ctx.roundRect(ox, oy, TUT_OP_BW, TUT_OP_BH, 5); ctx.fill();
+      ctx.strokeStyle = active ? '#c47f00' : '#2e2e2e'; ctx.lineWidth = active ? 1.5 : 1;
+      ctx.beginPath(); ctx.roundRect(ox, oy, TUT_OP_BW, TUT_OP_BH, 5); ctx.stroke();
+      ctx.font = 'bold 12px monospace'; ctx.fillStyle = active ? '#f0c040' : '#888';
+      ctx.textAlign = 'center'; ctx.fillText(op, ox + TUT_OP_BW/2, oy + 17);
+      tutOpHitZones.push({ x:ox, y:oy, w:TUT_OP_BW, h:TUT_OP_BH, op });
+    });
+  });
+  ctx.font = '11px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
+  ctx.fillText('Tab to switch slots  ·  C for operator reference', W/2, TUT_OP_BASE_Y + 2*(TUT_OP_BH+TUT_OP_GAP) + 14);
+}
 
 function drawTutorial() {
   if (tutPage === 2) { drawTutorialPage3(); return; }
@@ -1523,18 +1571,10 @@ function drawTutorial() {
   const bothDone = eval1 !== null && eval2 !== null;
   const combined = bothDone ? evalConnector(eval1, eval2, CONNECTOR) : false;
 
-  // ── Layout
-  const slotW = 44, slotH = 28, slotCX = W/2 - slotW/2;
-  const boxW = 300, boxX = W/2 - boxW/2;
-  const row1Y = 148, row2Y = 220;
-  const connTextY = 202;   // balanced: midpoint of row1 bottom + row2 top + font offset
-  const boxY = 126, boxH = row2Y + slotH + 20 - boxY;
-  const opBW = 48, opBH = 26, opGap = 5;
-  const rowW = 3*(opBW+opGap) - opGap;
-  const opBaseY = boxY + boxH + 22;
-  const doorW = 90, doorH = 100, doorX = W/2 - doorW/2;
-  const lintH = 10, doorY = opBaseY + 2*(opBH+opGap) + 46;
+  const doorW = 90, doorX = W/2 - doorW/2;
   const easeOut = t => 1 - Math.pow(1-t, 3);
+
+  drawTutorialBanner();
 
   // ── Title
   ctx.textAlign = 'center';
@@ -1543,129 +1583,78 @@ function drawTutorial() {
 
   // ── x = VAL display
   ctx.font = 'bold 20px monospace'; ctx.fillStyle = '#f0c040';
-  ctx.fillText(`x  =  ${VAL}`, W/2, 94);
+  ctx.fillText(`x  =  ${VAL}`, W/2, 82);
 
-  // ── Puzzle box — glows green when combined result is true
-  ctx.save();
-  if (combined) { ctx.shadowColor = '#44ff88'; ctx.shadowBlur = 24; }
-  ctx.strokeStyle = combined ? '#44ff88' : 'rgba(196,127,0,0.45)';
-  ctx.lineWidth = combined ? 2.5 : 1.5;
-  ctx.fillStyle = 'rgba(255,255,255,0.03)';
-  ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 10); ctx.fill();
-  ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 10); ctx.stroke();
-  ctx.restore();
+  drawTutorialPuzzleBox(combined);
 
-  // ── Draw an inequality row — always shows "x [op] N" in the box
   tutSlotHitZones = [];
-  const drawRow = (y, slot, n, selected, slotNum) => {
-    ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#bbb'; ctx.textAlign = 'right';
-    ctx.fillText('x', slotCX - 10, y + 20);
+  drawTutorialRow(TUT_ROW1_Y, tutSlot1, N1, tutSelectedSlot === 1, 1);
 
-    // Slot box
-    ctx.fillStyle = selected ? '#1c1c1c' : '#111';
-    ctx.beginPath(); ctx.roundRect(slotCX, y, slotW, slotH, 5); ctx.fill();
-    ctx.strokeStyle = selected ? '#ffffff' : slot ? '#c47f00' : '#444';
-    ctx.lineWidth = selected ? 2 : 1.5;
-    ctx.beginPath(); ctx.roundRect(slotCX, y, slotW, slotH, 5); ctx.stroke();
-    ctx.font = 'bold 14px monospace';
-    ctx.fillStyle = slot ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
-    ctx.fillText(slot || '?', slotCX + slotW/2, y + 19);
-
-    // RHS number
-    ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#bbb'; ctx.textAlign = 'left';
-    ctx.fillText(`${n}`, slotCX + slotW + 10, y + 20);
-
-    // Register clickable row area
-    tutSlotHitZones.push({ x: boxX, y: y - 4, w: boxW, h: slotH + 8, slot: slotNum });
-  };
-
-  drawRow(row1Y, tutSlot1, N1, tutSelectedSlot === 1, 1);
-
-  // ── Side substitution for row 1 — plain text, no box
+  // ── Side substitution for row 1
   if (tutSlot1) {
     const expr = `${VAL} ${tutSlot1} ${N1}`;
-    const sideX = boxX + boxW + 18;
-    ctx.font = '12px monospace'; ctx.textAlign = 'left';
-    ctx.fillStyle = '#555';
-    ctx.fillText(expr, sideX, row1Y + 20);
+    const sideX = TUT_BOX_X + TUT_BOX_W + 18;
+    ctx.font = '14px monospace'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#999';
+    ctx.fillText(expr, sideX, TUT_ROW1_Y + 20);
     ctx.fillStyle = eval1 ? '#44ee88' : '#ff5555';
-    ctx.fillText(eval1 ? ' ✓' : ' ✗', sideX + ctx.measureText(expr).width, row1Y + 20);
+    ctx.fillText(eval1 ? ' ✓' : ' ✗', sideX + ctx.measureText(expr).width, TUT_ROW1_Y + 20);
   }
 
-  // Connector label
   ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00'; ctx.textAlign = 'center';
-  ctx.fillText(hardMode ? 'AND' : '&&', W/2, connTextY);
+  ctx.fillText(hardMode ? 'AND' : '&&', W/2, TUT_CONN_Y);
 
-  drawRow(row2Y, tutSlot2, N2, tutSelectedSlot === 2, 2);
+  drawTutorialRow(TUT_ROW2_Y, tutSlot2, N2, tutSelectedSlot === 2, 2);
 
   // ── Side substitution for row 2
   if (tutSlot2) {
     const expr = `${VAL} ${tutSlot2} ${N2}`;
-    const sideX = boxX + boxW + 18;
-    ctx.font = '12px monospace'; ctx.textAlign = 'left';
-    ctx.fillStyle = '#555';
-    ctx.fillText(expr, sideX, row2Y + 20);
+    const sideX = TUT_BOX_X + TUT_BOX_W + 18;
+    ctx.font = '14px monospace'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#999';
+    ctx.fillText(expr, sideX, TUT_ROW2_Y + 20);
     ctx.fillStyle = eval2 ? '#44ee88' : '#ff5555';
-    ctx.fillText(eval2 ? ' ✓' : ' ✗', sideX + ctx.measureText(expr).width, row2Y + 20);
+    ctx.fillText(eval2 ? ' ✓' : ' ✗', sideX + ctx.measureText(expr).width, TUT_ROW2_Y + 20);
   }
 
-  // ── Operator buttons
-  tutOpHitZones = [];
-  [OPERATORS.slice(0,3), OPERATORS.slice(3)].forEach((ops, ri) => {
-    ops.forEach((op, i) => {
-      const ox = W/2 - rowW/2 + i*(opBW+opGap), oy = opBaseY + ri*(opBH+opGap);
-      const curSlot = tutSelectedSlot === 1 ? tutSlot1 : tutSlot2;
-      const active = curSlot === op;
-      ctx.fillStyle = active ? '#1e2030' : '#181818';
-      ctx.beginPath(); ctx.roundRect(ox, oy, opBW, opBH, 5); ctx.fill();
-      ctx.strokeStyle = active ? '#c47f00' : '#2e2e2e'; ctx.lineWidth = active ? 1.5 : 1;
-      ctx.beginPath(); ctx.roundRect(ox, oy, opBW, opBH, 5); ctx.stroke();
-      ctx.font = 'bold 12px monospace'; ctx.fillStyle = active ? '#f0c040' : '#666';
-      ctx.textAlign = 'center'; ctx.fillText(op, ox + opBW/2, oy + 17);
-      tutOpHitZones.push({ x:ox, y:oy, w:opBW, h:opBH, op });
-    });
-  });
-
-  // Slot switch hint + cheatsheet note
-  ctx.font = '10px monospace'; ctx.fillStyle = '#444'; ctx.textAlign = 'center';
-  ctx.fillText('Tab to switch slots  ·  C for operator reference', W/2, opBaseY + 2*(opBH+opGap) + 16);
+  drawTutorialOpButtons();
 
   // ── Door passage — white/grey sparkles, no colour yet
-  ctx.save(); ctx.beginPath(); ctx.rect(doorX, doorY, doorW, doorH); ctx.clip();
-  drawPipe(doorX, doorY, doorW, doorH, '#ffffff', '#3a3a3a'); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(doorX, TUT_DOOR_Y, doorW, TUT_DOOR_H); ctx.clip();
+  drawDoorSmoke(doorX, TUT_DOOR_Y, doorW, TUT_DOOR_H, '#ffffff', '#3a3a3a'); ctx.restore();
 
   // ── Door panel sliding up when open
   if (tutDoorSlide < 1) {
-    const slideY = doorY - easeOut(tutDoorSlide) * (doorH + lintH + 2);
+    const slideY = TUT_DOOR_Y - easeOut(tutDoorSlide) * (TUT_DOOR_H + TUT_LINT_H + 2);
     ctx.save();
-    ctx.beginPath(); ctx.rect(doorX, doorY - lintH, doorW, doorH + lintH); ctx.clip();
-    const gg = ctx.createLinearGradient(doorX, slideY, doorX+doorW, slideY+doorH);
+    ctx.beginPath(); ctx.rect(doorX, TUT_DOOR_Y - TUT_LINT_H, doorW, TUT_DOOR_H + TUT_LINT_H); ctx.clip();
+    const gg = ctx.createLinearGradient(doorX, slideY, doorX+doorW, slideY+TUT_DOOR_H);
     gg.addColorStop(0,    '#b07810');
     gg.addColorStop(0.25, '#c89028');
     gg.addColorStop(0.65, '#9a6400');
     gg.addColorStop(1,    '#6a3c00');
-    ctx.fillStyle = gg; ctx.fillRect(doorX, slideY, doorW, doorH);
+    ctx.fillStyle = gg; ctx.fillRect(doorX, slideY, doorW, TUT_DOOR_H);
     ctx.strokeStyle = '#c4880a'; ctx.lineWidth = 1.5;
-    ctx.strokeRect(doorX, slideY, doorW, doorH);
+    ctx.strokeRect(doorX, slideY, doorW, TUT_DOOR_H);
     ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
     for (let i = 1; i < 3; i++) {
       const lx = doorX + (doorW/3)*i;
-      ctx.beginPath(); ctx.moveTo(lx, slideY+10); ctx.lineTo(lx, slideY+doorH-10); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx, slideY+10); ctx.lineTo(lx, slideY+TUT_DOOR_H-10); ctx.stroke();
     }
     ctx.restore();
   }
 
   // ── Door frame
-  const lg = ctx.createLinearGradient(0, doorY-lintH, 0, doorY);
+  const lg = ctx.createLinearGradient(0, TUT_DOOR_Y-TUT_LINT_H, 0, TUT_DOOR_Y);
   lg.addColorStop(0, '#c08820'); lg.addColorStop(1, '#8a5800');
-  ctx.fillStyle = lg; ctx.fillRect(doorX - 8, doorY - lintH, doorW + 16, lintH);
+  ctx.fillStyle = lg; ctx.fillRect(doorX - 8, TUT_DOOR_Y - TUT_LINT_H, doorW + 16, TUT_LINT_H);
   ctx.fillStyle = '#9a6800';
-  ctx.fillRect(doorX - 8, doorY, 8, doorH);
-  ctx.fillRect(doorX + doorW, doorY, 8, doorH);
-  ctx.fillStyle = '#c47f00'; ctx.fillRect(doorX - 8, doorY + doorH, doorW + 16, 6);
+  ctx.fillRect(doorX - 8, TUT_DOOR_Y, 8, TUT_DOOR_H);
+  ctx.fillRect(doorX + doorW, TUT_DOOR_Y, 8, TUT_DOOR_H);
+  ctx.fillStyle = '#c47f00'; ctx.fillRect(doorX - 8, TUT_DOOR_Y + TUT_DOOR_H, doorW + 16, 6);
 
   // ── Status caption
-  const capY = doorY + doorH + 22;
+  const capY = TUT_DOOR_Y + TUT_DOOR_H + 26;
   let capText, capCol;
   if (combined) {
     capText = 'Both conditions true — the door opens!';
@@ -1677,20 +1666,23 @@ function drawTutorial() {
     capText = 'Fill both slots. Tab to switch between them.';
     capCol = '#888';
   } else {
-    capText = 'Pick operators from the buttons above';
-    capCol = '#666';
+    capText = null;
   }
-  ctx.font = '12px monospace'; ctx.fillStyle = capCol; ctx.textAlign = 'center';
-  ctx.fillText(capText, W/2, capY);
-  ctx.font = '10px monospace'; ctx.fillStyle = '#333';
-  ctx.fillText('Esc to close', W/2, capY + 18);
+  if (capText) {
+    ctx.font = '13px monospace'; ctx.fillStyle = capCol; ctx.textAlign = 'center';
+    ctx.fillText(capText, W/2, capY);
+  }
+  ctx.font = '11px monospace'; ctx.fillStyle = '#555';
+  ctx.textAlign = 'center'; ctx.fillText('Esc to close', W/2, 522);
 
-  // Page dots (3) + next hint
-  ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 - 14, capY + 34, 3, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2,      capY + 34, 3, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 14, capY + 34, 3, 0, Math.PI*2); ctx.fill();
-  ctx.font = '10px monospace'; ctx.fillStyle = '#555'; ctx.textAlign = 'center';
-  ctx.fillText('Enter / Space  →  next page', W/2, capY + 50);
+  // Page dots + nav
+  const dotY1 = 534;
+  ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 - 14, dotY1, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2,      dotY1, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 14, dotY1, 3, 0, Math.PI*2); ctx.fill();
+  ctx.font = '12px monospace'; ctx.fillStyle = '#c47f00'; ctx.textAlign = 'center';
+  ctx.fillText('next  →', W/2 + 40, 550);
+  tutNextHZ = { x: W/2 + 8, y: 538, w: 72, h: 18 };
 }
 
 // ─── DRAW: TUTORIAL PAGE 2 ───────────────────────────────────────────────────
@@ -1706,90 +1698,72 @@ function drawTutorialPage2() {
   const redOpen  = !!evalConnector(rEval1, rEval2, CONNECTOR);
   const bothFilled = tutSlot1 && tutSlot2;
 
-  // ── Layout
-  const slotW = 44, slotH = 28, slotCX = W/2 - slotW/2;
-  const boxW = 300, boxX = W/2 - boxW/2;
-  const connHintY = 108;  // connector hint line above box
-  const row1Y = 158, row2Y = 230, connTextY = 212;
-  const boxY = 136, boxH = row2Y + slotH + 20 - boxY;
-  const opBW = 48, opBH = 26, opGap = 5;
-  const rowW = 3*(opBW+opGap) - opGap;
-  const opBaseY = boxY + boxH + 22;
-  const doorW = 80, doorH = 100, lintH = 10;
-  const doorBX = W/2 - doorW;
-  const doorRX = W/2;
-  const doorY  = opBaseY + 2*(opBH+opGap) + 46;
+  // ── Layout (page-specific)
+  const connHintY = 90;
+  const doorW = 80;
+  const doorBX = W/2 - doorW, doorRX = W/2;
   const easeOut = t => 1 - Math.pow(1-t, 3);
+
+  drawTutorialBanner();
 
   // ── Title
   ctx.textAlign = 'center';
   ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#c47f00';
-  ctx.fillText('GATE PUZZLE', W/2, 38);
+  ctx.fillText('GATE PUZZLE', W/2, 48);
 
-  // ── x = val labels (blue left, red right)
-  ctx.font = 'bold 18px monospace';
-  ctx.fillStyle = '#5599ff'; ctx.textAlign = 'center';
-  ctx.fillText(`x = ${BVAL}`, boxX - 55, 80);
-  ctx.fillStyle = '#ff5555';
-  ctx.fillText(`x = ${RVAL}`, boxX + boxW + 55, 80);
+  // ── Stat boxes (blue left, red right) — like the real puzzle
+  const drawStatBox = (cx, cy, val, accent, isOpen) => {
+    const bw = 100, bh = 50, bx = cx - bw/2, by = cy - bh/2;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill();
+    ctx.strokeStyle = isOpen ? accent : '#555'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.stroke();
+    ctx.font = 'bold 22px monospace'; ctx.fillStyle = isOpen ? accent : '#777'; ctx.textAlign = 'center';
+    ctx.fillText(`x = ${val}`, cx, cy + 8);
+  };
+  const statMidY = TUT_BOX_Y + (TUT_ROW2_Y + TUT_SLOT_H - TUT_BOX_Y) / 2 + 10;
+  drawStatBox(TUT_BOX_X / 2 - 6, statMidY, BVAL, '#5599ff', blueOpen);
+  drawStatBox((TUT_BOX_X + TUT_BOX_W + W) / 2 + 6, statMidY, RVAL, '#ff5555', redOpen);
 
   // ── Connector toggle hint (appears after both slots filled)
   tutConnectorHZ = null; tutConnectorBoxHZ = null;
   if (bothFilled) {
     const connLabel = connectorLabel();
-    const hint = `click  ${connLabel}  to practice with other connectors`;
-    ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
-    ctx.fillStyle = '#c4a020';
-    ctx.fillText(hint, W/2, connHintY);
-    // Hit zone centered on the text
-    const tw = ctx.measureText(hint).width;
-    tutConnectorHZ = { x: W/2 - tw/2 - 8, y: connHintY - 14, w: tw + 16, h: 20 };
+    const pre = 'click  ', post = '  to practice with other connectors';
+    ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
+    const preW   = ctx.measureText(pre).width;
+    const labelW = ctx.measureText(connLabel).width;
+    const postW  = ctx.measureText(post).width;
+    const totalW = preW + labelW + postW;
+    const hx = W/2 - totalW/2;
+    ctx.fillStyle = '#aaa'; ctx.fillText(pre,       hx,            connHintY);
+    ctx.fillStyle = '#c47f00'; ctx.fillText(connLabel, hx + preW,     connHintY);
+    ctx.fillStyle = '#aaa'; ctx.fillText(post,      hx + preW + labelW, connHintY);
+    ctx.textAlign = 'center';
+    // Hit zone centered on the full text
+    tutConnectorHZ = { x: W/2 - totalW/2 - 8, y: connHintY - 14, w: totalW + 16, h: 20 };
   }
 
-  // ── Puzzle box
-  ctx.fillStyle = 'rgba(255,255,255,0.03)';
-  ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 10); ctx.fill();
-  ctx.strokeStyle = 'rgba(196,127,0,0.45)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 10); ctx.stroke();
+  drawTutorialPuzzleBox(false);
 
-  // ── Draw a row (always shows x)
   tutSlotHitZones = [];
-  const drawRow = (y, slot, n, selected, slotNum) => {
-    ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#bbb'; ctx.textAlign = 'right';
-    ctx.fillText('x', slotCX - 10, y + 20);
-
-    ctx.fillStyle = selected ? '#1c1c1c' : '#111';
-    ctx.beginPath(); ctx.roundRect(slotCX, y, slotW, slotH, 5); ctx.fill();
-    ctx.strokeStyle = selected ? '#ffffff' : slot ? '#c47f00' : '#444';
-    ctx.lineWidth = selected ? 2 : 1.5;
-    ctx.beginPath(); ctx.roundRect(slotCX, y, slotW, slotH, 5); ctx.stroke();
-    ctx.font = 'bold 14px monospace';
-    ctx.fillStyle = slot ? '#fff' : '#3a3a3a'; ctx.textAlign = 'center';
-    ctx.fillText(slot || '?', slotCX + slotW/2, y + 19);
-
-    ctx.font = 'bold 17px monospace'; ctx.fillStyle = '#bbb'; ctx.textAlign = 'left';
-    ctx.fillText(`${n}`, slotCX + slotW + 10, y + 20);
-
-    tutSlotHitZones.push({ x: boxX, y: y - 4, w: boxW, h: slotH + 8, slot: slotNum });
-  };
-
-  drawRow(row1Y, tutSlot1, N1, tutSelectedSlot === 1, 1);
+  drawTutorialRow(TUT_ROW1_Y, tutSlot1, N1, tutSelectedSlot === 1, 1);
 
   ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#c47f00'; ctx.textAlign = 'center';
   const connBoxLabel = connectorLabel();
-  ctx.fillText(connBoxLabel, W/2, connTextY);
-  { const tw = ctx.measureText(connBoxLabel).width; tutConnectorBoxHZ = { x: W/2 - tw/2 - 10, y: connTextY - 14, w: tw + 20, h: 20 }; }
+  ctx.fillText(connBoxLabel, W/2, TUT_CONN_Y);
+  { const tw = ctx.measureText(connBoxLabel).width; tutConnectorBoxHZ = { x: W/2 - tw/2 - 10, y: TUT_CONN_Y - 14, w: tw + 20, h: 20 }; }
 
-  drawRow(row2Y, tutSlot2, N2, tutSelectedSlot === 2, 2);
+  drawTutorialRow(TUT_ROW2_Y, tutSlot2, N2, tutSelectedSlot === 2, 2);
 
   // ── Side substitution — blue (left of box, right-aligned)
-  const sideRX = boxX - 14;  // right edge of blue side text
-  const sideLX = boxX + boxW + 14;  // left edge of red side text
+  const sideRX = TUT_BOX_X - 14;
+  const sideLX = TUT_BOX_X + TUT_BOX_W + 14;
   ctx.font = '12px monospace';
 
   // Helper: draw "VAL op N ✓/✗" with coloured check, right-aligned at rx (blue) or left at lx (red)
   const drawSub = (val, slot, n, result, rx, lx) => {
-    ctx.font = '12px monospace';
+    ctx.font = '14px monospace';
     ctx.textAlign = 'left';
     const valStr  = `${val}`;
     const restStr = slot ? ` ${slot} ${n} ` : '   ';
@@ -1803,7 +1777,7 @@ function drawTutorialPage2() {
       const sx = rx - totalW;
       ctx.fillStyle = '#5599ff';
       ctx.fillText(valStr, sx, 0);
-      ctx.fillStyle = '#666666';
+      ctx.fillStyle = '#999999';
       ctx.fillText(restStr, sx + valW, 0);
       ctx.fillStyle = result ? '#44ee88' : '#ff5555';
       ctx.fillText(chk, sx + valW + restW, 0);
@@ -1811,7 +1785,7 @@ function drawTutorialPage2() {
       // red side — left-aligned from lx
       ctx.fillStyle = '#ff5555';
       ctx.fillText(valStr, lx, 0);
-      ctx.fillStyle = '#666666';
+      ctx.fillStyle = '#999999';
       ctx.fillText(restStr, lx + valW, 0);
       ctx.fillStyle = result ? '#44ee88' : '#ff5555';
       ctx.fillText(chk, lx + valW + restW, 0);
@@ -1819,54 +1793,36 @@ function drawTutorialPage2() {
   };
 
   if (tutSlot1) {
-    ctx.save(); ctx.translate(0, row1Y + 20);
+    ctx.save(); ctx.translate(0, TUT_ROW1_Y + 20);
     drawSub(BVAL, tutSlot1, N1, bEval1, sideRX, null);
     drawSub(RVAL, tutSlot1, N1, rEval1, null, sideLX);
     ctx.restore();
   }
   if (tutSlot2) {
-    ctx.save(); ctx.translate(0, row2Y + 20);
+    ctx.save(); ctx.translate(0, TUT_ROW2_Y + 20);
     drawSub(BVAL, tutSlot2, N2, bEval2, sideRX, null);
     drawSub(RVAL, tutSlot2, N2, rEval2, null, sideLX);
     ctx.restore();
   }
 
-  // ── Operator buttons
-  tutOpHitZones = [];
-  [OPERATORS.slice(0,3), OPERATORS.slice(3)].forEach((ops, ri) => {
-    ops.forEach((op, i) => {
-      const ox = W/2 - rowW/2 + i*(opBW+opGap), oy = opBaseY + ri*(opBH+opGap);
-      const cur = tutSelectedSlot === 1 ? tutSlot1 : tutSlot2;
-      const active = cur === op;
-      ctx.fillStyle = active ? '#1e2030' : '#181818';
-      ctx.beginPath(); ctx.roundRect(ox, oy, opBW, opBH, 5); ctx.fill();
-      ctx.strokeStyle = active ? '#c47f00' : '#2e2e2e'; ctx.lineWidth = active ? 1.5 : 1;
-      ctx.beginPath(); ctx.roundRect(ox, oy, opBW, opBH, 5); ctx.stroke();
-      ctx.font = 'bold 12px monospace'; ctx.fillStyle = active ? '#f0c040' : '#666';
-      ctx.textAlign = 'center'; ctx.fillText(op, ox + opBW/2, oy + 17);
-      tutOpHitZones.push({ x:ox, y:oy, w:opBW, h:opBH, op });
-    });
-  });
-
-  ctx.font = '10px monospace'; ctx.fillStyle = '#444'; ctx.textAlign = 'center';
-  ctx.fillText('Tab to switch slots  ·  C for operator reference', W/2, opBaseY + 2*(opBH+opGap) + 16);
+  drawTutorialOpButtons();
 
   // ── Helper: draw one door panel only (smoke drawn separately with correct opacity)
   const drawDoor = (dx, slide) => {
     if (slide < 1) {
-      const slideY = doorY - easeOut(slide) * (doorH + lintH + 2);
+      const slideY = TUT_DOOR_Y - easeOut(slide) * (TUT_DOOR_H + TUT_LINT_H + 2);
       ctx.save();
-      ctx.beginPath(); ctx.rect(dx, doorY - lintH, doorW, doorH + lintH); ctx.clip();
-      const gg = ctx.createLinearGradient(dx, slideY, dx+doorW, slideY+doorH);
+      ctx.beginPath(); ctx.rect(dx, TUT_DOOR_Y - TUT_LINT_H, doorW, TUT_DOOR_H + TUT_LINT_H); ctx.clip();
+      const gg = ctx.createLinearGradient(dx, slideY, dx+doorW, slideY+TUT_DOOR_H);
       gg.addColorStop(0, '#b07810'); gg.addColorStop(0.25, '#c89028');
       gg.addColorStop(0.65, '#9a6400'); gg.addColorStop(1, '#6a3c00');
-      ctx.fillStyle = gg; ctx.fillRect(dx, slideY, doorW, doorH);
+      ctx.fillStyle = gg; ctx.fillRect(dx, slideY, doorW, TUT_DOOR_H);
       ctx.strokeStyle = '#c4880a'; ctx.lineWidth = 1.5;
-      ctx.strokeRect(dx, slideY, doorW, doorH);
+      ctx.strokeRect(dx, slideY, doorW, TUT_DOOR_H);
       ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
       for (let i = 1; i < 3; i++) {
         const lx = dx + (doorW/3)*i;
-        ctx.beginPath(); ctx.moveTo(lx, slideY+8); ctx.lineTo(lx, slideY+doorH-8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(lx, slideY+8); ctx.lineTo(lx, slideY+TUT_DOOR_H-8); ctx.stroke();
       }
       ctx.restore();
     }
@@ -1882,30 +1838,30 @@ function drawTutorialPage2() {
     const tutRedAlpha    = Math.max(tutRedSlide  - tutPurpleAlpha, 0);
     if (tutBlueAlpha > 0.02) {
       ctx.save(); ctx.globalAlpha = tutBlueAlpha;
-      ctx.beginPath(); ctx.rect(doorBX, doorY, doorW, doorH); ctx.clip();
-      drawPipe(doorBX, doorY, doorW, doorH, '#5599ff', '#0b1a32'); ctx.restore();
+      ctx.beginPath(); ctx.rect(doorBX, TUT_DOOR_Y, doorW, TUT_DOOR_H); ctx.clip();
+      drawDoorSmoke(doorBX, TUT_DOOR_Y, doorW, TUT_DOOR_H, '#5599ff', '#0b1a32'); ctx.restore();
     }
     if (tutRedAlpha > 0.02) {
       ctx.save(); ctx.globalAlpha = tutRedAlpha;
-      ctx.beginPath(); ctx.rect(doorRX, doorY, doorW, doorH); ctx.clip();
-      drawPipe(doorRX, doorY, doorW, doorH, '#ff5555', '#2e0c0c'); ctx.restore();
+      ctx.beginPath(); ctx.rect(doorRX, TUT_DOOR_Y, doorW, TUT_DOOR_H); ctx.clip();
+      drawDoorSmoke(doorRX, TUT_DOOR_Y, doorW, TUT_DOOR_H, '#ff5555', '#2e0c0c'); ctx.restore();
     }
     if (tutPurpleAlpha > 0.02) {
       ctx.save(); ctx.globalAlpha = tutPurpleAlpha;
-      ctx.beginPath(); ctx.rect(doorBX, doorY, doorW*2, doorH); ctx.clip();
-      drawPipe(doorBX, doorY, doorW*2, doorH, '#cc55ff', '#1a0a28'); ctx.restore();
+      ctx.beginPath(); ctx.rect(doorBX, TUT_DOOR_Y, doorW*2, TUT_DOOR_H); ctx.clip();
+      drawDoorSmoke(doorBX, TUT_DOOR_Y, doorW*2, TUT_DOOR_H, '#cc55ff', '#1a0a28'); ctx.restore();
     }
   } else {
     // Draw each color independently with no mixing
     if (tutBlueSlide > 0.02) {
       ctx.save(); ctx.globalAlpha = tutBlueSlide;
-      ctx.beginPath(); ctx.rect(doorBX, doorY, doorW, doorH); ctx.clip();
-      drawPipe(doorBX, doorY, doorW, doorH, '#5599ff', '#0b1a32'); ctx.restore();
+      ctx.beginPath(); ctx.rect(doorBX, TUT_DOOR_Y, doorW, TUT_DOOR_H); ctx.clip();
+      drawDoorSmoke(doorBX, TUT_DOOR_Y, doorW, TUT_DOOR_H, '#5599ff', '#0b1a32'); ctx.restore();
     }
     if (tutRedSlide > 0.02) {
       ctx.save(); ctx.globalAlpha = tutRedSlide;
-      ctx.beginPath(); ctx.rect(doorRX, doorY, doorW, doorH); ctx.clip();
-      drawPipe(doorRX, doorY, doorW, doorH, '#ff5555', '#2e0c0c'); ctx.restore();
+      ctx.beginPath(); ctx.rect(doorRX, TUT_DOOR_Y, doorW, TUT_DOOR_H); ctx.clip();
+      drawDoorSmoke(doorRX, TUT_DOOR_Y, doorW, TUT_DOOR_H, '#ff5555', '#2e0c0c'); ctx.restore();
     }
   }
 
@@ -1913,16 +1869,16 @@ function drawTutorialPage2() {
   drawDoor(doorRX, tutRedSlide);
 
   // ── Shared outer frame (flush doors — one lintel, outer pillars, threshold)
-  const lg2 = ctx.createLinearGradient(0, doorY - lintH, 0, doorY);
+  const lg2 = ctx.createLinearGradient(0, TUT_DOOR_Y - TUT_LINT_H, 0, TUT_DOOR_Y);
   lg2.addColorStop(0, '#c08820'); lg2.addColorStop(1, '#8a5800');
-  ctx.fillStyle = lg2; ctx.fillRect(doorBX - 8, doorY - lintH, doorW*2 + 16, lintH);
+  ctx.fillStyle = lg2; ctx.fillRect(doorBX - 8, TUT_DOOR_Y - TUT_LINT_H, doorW*2 + 16, TUT_LINT_H);
   ctx.fillStyle = '#9a6800';
-  ctx.fillRect(doorBX - 8, doorY, 8, doorH);
-  ctx.fillRect(doorBX + doorW*2, doorY, 8, doorH);
-  ctx.fillStyle = '#c47f00'; ctx.fillRect(doorBX - 8, doorY + doorH, doorW*2 + 16, 6);
+  ctx.fillRect(doorBX - 8, TUT_DOOR_Y, 8, TUT_DOOR_H);
+  ctx.fillRect(doorBX + doorW*2, TUT_DOOR_Y, 8, TUT_DOOR_H);
+  ctx.fillStyle = '#c47f00'; ctx.fillRect(doorBX - 8, TUT_DOOR_Y + TUT_DOOR_H, doorW*2 + 16, 6);
 
   // ── Caption
-  const capY = doorY + doorH + 22;
+  const capY = TUT_DOOR_Y + TUT_DOOR_H + 26;
   let capText, capCol;
   if (blueOpen && redOpen)       { capText = 'Both doors open & their colors combine!'; capCol = '#f0c040'; }
   else if (blueOpen && !redOpen) { capText = 'Blue door opens — try different operators to open red.'; capCol = '#5599ff'; }
@@ -1931,94 +1887,94 @@ function drawTutorialPage2() {
   else if (tutSlot1 || tutSlot2) { capText = 'Fill both slots — each door tests the same operators against its own x.'; capCol = '#888'; }
   else                           { capText = 'Same operators, two x values — each door evaluates independently.'; capCol = '#666'; }
 
-  ctx.font = '12px monospace'; ctx.fillStyle = capCol; ctx.textAlign = 'center';
+  ctx.font = '13px monospace'; ctx.fillStyle = capCol; ctx.textAlign = 'center';
   ctx.fillText(capText, W/2, capY);
-  ctx.font = '10px monospace'; ctx.fillStyle = '#555';
-  ctx.fillText('Enter / Space  →  next page  ·  Esc to close', W/2, capY + 18);
+  ctx.font = '11px monospace'; ctx.fillStyle = '#555';
+  ctx.fillText('Esc to close', W/2, 522);
 
   // Page dots (3, middle active)
-  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 14, capY + 34, 3, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2,      capY + 34, 3, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 14, capY + 34, 3, 0, Math.PI*2); ctx.fill();
-  ctx.font = '10px monospace'; ctx.fillStyle = '#444'; ctx.textAlign = 'center';
-  ctx.fillText('←  back', W/2, capY + 50);
+  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 14, 534, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2,      534, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 + 14, 534, 3, 0, Math.PI*2); ctx.fill();
+  ctx.font = '12px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#666';    ctx.fillText('←  back', W/2 - 40, 550);
+  ctx.fillStyle = '#c47f00'; ctx.fillText('next  →', W/2 + 40, 550);
+  tutBackHZ = { x: W/2 - 80, y: 538, w: 72, h: 18 };
+  tutNextHZ = { x: W/2 + 8,  y: 538, w: 72, h: 18 };
 }
 
 // ─── DRAW: TUTORIAL PAGE 3 ───────────────────────────────────────────────────
 function drawTutorialPage3() {
-  const pipeW = 130, pipeH = 185, pipeGap = 38;
-  const totalW = 3 * pipeW + 2 * pipeGap;
+  const doorPreviewW = 130, doorPreviewH = 185, doorPreviewGap = 38;
+  const totalW = 3 * doorPreviewW + 2 * doorPreviewGap;
   const startX = W/2 - totalW/2;
-  const pipeY = 170;
-  const bluePX = startX, purplePX = startX + pipeW + pipeGap, redPX = startX + 2*(pipeW + pipeGap);
+  const doorPreviewY = 148;
+  const blueX = startX, purpleX = startX + doorPreviewW + doorPreviewGap, redX = startX + 2*(doorPreviewW + doorPreviewGap);
   const lineH = 17;
-  const descY = pipeY + pipeH + 18;
+  const descY = doorPreviewY + doorPreviewH + 18;
   const capY  = 490;
 
+  drawTutorialBanner();
   ctx.textAlign = 'center';
   ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#c47f00';
-  ctx.fillText('DOOR EFFECTS', W/2, 46);
-  ctx.font = '12px monospace'; ctx.fillStyle = '#888';
+  ctx.fillText('DOOR EFFECTS', W/2, 48);
+  ctx.font = '13px monospace'; ctx.fillStyle = '#888';
   ctx.fillText('each door has an effect — walk through the opening to receive it', W/2, 82);
 
   // Column labels above doors
-  ctx.font = 'bold 11px monospace';
-  ctx.fillStyle = '#5599ff'; ctx.fillText('BLUE DOOR',  bluePX   + pipeW/2, pipeY - 10);
-  ctx.fillStyle = '#cc55ff'; ctx.fillText('BOTH DOORS', purplePX + pipeW/2, pipeY - 10);
-  ctx.fillStyle = '#ff5555'; ctx.fillText('RED DOOR',   redPX    + pipeW/2, pipeY - 10);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = '#5599ff'; ctx.fillText('BLUE DOOR',  blueX   + doorPreviewW/2, doorPreviewY - 12);
+  ctx.fillStyle = '#cc55ff'; ctx.fillText('BOTH DOORS', purpleX + doorPreviewW/2, doorPreviewY - 12);
+  ctx.fillStyle = '#ff5555'; ctx.fillText('RED DOOR',   redX    + doorPreviewW/2, doorPreviewY - 12);
 
   // Draw door smoke previews
-  ctx.save(); ctx.beginPath(); ctx.rect(bluePX,   pipeY, pipeW, pipeH); ctx.clip();
-  drawPipe(bluePX,   pipeY, pipeW, pipeH, '#5599ff', '#0b1a32'); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(blueX,   doorPreviewY, doorPreviewW, doorPreviewH); ctx.clip();
+  drawDoorSmoke(blueX,   doorPreviewY, doorPreviewW, doorPreviewH, '#5599ff', '#0b1a32'); ctx.restore();
 
-  ctx.save(); ctx.beginPath(); ctx.rect(purplePX, pipeY, pipeW, pipeH); ctx.clip();
-  drawPipe(purplePX, pipeY, pipeW, pipeH, '#cc55ff', '#1a0a28'); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(purpleX, doorPreviewY, doorPreviewW, doorPreviewH); ctx.clip();
+  drawDoorSmoke(purpleX, doorPreviewY, doorPreviewW, doorPreviewH, '#cc55ff', '#1a0a28'); ctx.restore();
 
-  ctx.save(); ctx.beginPath(); ctx.rect(redPX,    pipeY, pipeW, pipeH); ctx.clip();
-  drawPipe(redPX,    pipeY, pipeW, pipeH, '#ff5555', '#2e0c0c'); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(redX,    doorPreviewY, doorPreviewW, doorPreviewH); ctx.clip();
+  drawDoorSmoke(redX,    doorPreviewY, doorPreviewW, doorPreviewH, '#ff5555', '#2e0c0c'); ctx.restore();
 
   // Effect lists
   ctx.font = '12px monospace'; ctx.textAlign = 'center';
   ['SPEED', 'WATERPROOF', 'FREEZE'].forEach((eff, i) => {
     ctx.fillStyle = '#5599ff';
-    ctx.fillText(eff, bluePX + pipeW/2, descY + i * lineH);
+    ctx.fillText(eff, blueX + doorPreviewW/2, descY + i * lineH);
   });
-  ctx.font = '10px monospace'; ctx.fillStyle = '#4a6a88';
-  ctx.fillText('helpful buffs', bluePX + pipeW/2, descY + 3 * lineH + 8);
+  ctx.font = '11px monospace'; ctx.fillStyle = '#5a7a98';
+  ctx.fillText('helpful buffs', blueX + doorPreviewW/2, descY + 3 * lineH + 8);
 
   ctx.font = '12px monospace'; ctx.fillStyle = '#cc55ff';
-  ctx.fillText('blue effect', purplePX + pipeW/2, descY);
-  ctx.fillText('+',           purplePX + pipeW/2, descY + lineH);
-  ctx.fillText('red effect',  purplePX + pipeW/2, descY + lineH * 2);
-  ctx.font = '10px monospace'; ctx.fillStyle = '#806090';
-  ctx.fillText('both at once', purplePX + pipeW/2, descY + 3 * lineH + 8);
+  ctx.fillText('blue effect', purpleX + doorPreviewW/2, descY);
+  ctx.fillText('+',           purpleX + doorPreviewW/2, descY + lineH);
+  ctx.fillText('red effect',  purpleX + doorPreviewW/2, descY + lineH * 2);
+  ctx.font = '11px monospace'; ctx.fillStyle = '#9070a0';
+  ctx.fillText('both at once', purpleX + doorPreviewW/2, descY + 3 * lineH + 8);
 
   ctx.font = '12px monospace';
   ['SLOW', 'REVERSE', 'DARKNESS'].forEach((eff, i) => {
     ctx.fillStyle = '#ff5555';
-    ctx.fillText(eff, redPX + pipeW/2, descY + i * lineH);
+    ctx.fillText(eff, redX + doorPreviewW/2, descY + i * lineH);
   });
-  ctx.font = '10px monospace'; ctx.fillStyle = '#884444';
-  ctx.fillText('harmful debuffs', redPX + pipeW/2, descY + 3 * lineH + 8);
+  ctx.font = '11px monospace'; ctx.fillStyle = '#aa5555';
+  ctx.fillText('harmful debuffs', redX + doorPreviewW/2, descY + 3 * lineH + 8);
 
-  ctx.font = '12px monospace'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
+  ctx.font = '13px monospace'; ctx.fillStyle = '#888'; ctx.textAlign = 'center';
   ctx.fillText('the specific effect on each door is random', W/2, capY);
 
-  ctx.font = '10px monospace'; ctx.fillStyle = '#555';
-  ctx.fillText('Enter / Space / Esc to close', W/2, capY + 26);
-
-  const dotY = capY + 42;
-  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 14, dotY, 3, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2,      dotY, 3, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 + 14, dotY, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2 - 14, 534, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#333';    ctx.beginPath(); ctx.arc(W/2,      534, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#c47f00'; ctx.beginPath(); ctx.arc(W/2 + 14, 534, 3, 0, Math.PI*2); ctx.fill();
 
   // Back + exit row
-  ctx.font = '10px monospace'; ctx.fillStyle = '#444'; ctx.textAlign = 'center';
-  ctx.fillText('←  back', W/2 - 40, dotY + 16);
+  ctx.font = '12px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
+  ctx.fillText('←  back', W/2 - 40, 550);
   ctx.fillStyle = '#c47f00';
-  ctx.fillText('exit  →', W/2 + 40, dotY + 16);
-  // Store exit hit zone
-  tutExitHZ = { x: W/2 + 8, y: dotY + 4, w: 70, h: 16 };
+  ctx.fillText('exit  →', W/2 + 40, 550);
+  tutBackHZ = { x: W/2 - 80, y: 538, w: 72, h: 18 };
+  tutExitHZ = { x: W/2 + 8,  y: 538, w: 70, h: 18 };
 }
 
 // ─── DRAW: SLIME CHARACTER ───────────────────────────────────────────────────
@@ -2036,8 +1992,8 @@ function drawSlime(wx, wy) {
   const now = frameTime;
   const effs = activeEffects.filter(e => e.endTime > now);
   if (effs.length > 0) {
-    const redEffs  = effs.filter(e => EFFECT_META[e.type].pipe === 'red');
-    const blueEffs = effs.filter(e => EFFECT_META[e.type].pipe === 'blue');
+    const redEffs  = effs.filter(e => EFFECT_META[e.type].door === 'red');
+    const blueEffs = effs.filter(e => EFFECT_META[e.type].door === 'blue');
     const redEnd   = redEffs.length  ? redEffs.reduce((a,b)  => a.endTime > b.endTime ? a : b).endTime  : 0;
     const blueEnd  = blueEffs.length ? blueEffs.reduce((a,b) => a.endTime > b.endTime ? a : b).endTime : 0;
     const redAlpha  = redEnd  ? Math.min(1.0, (redEnd  - now) / 2.5) : 0;
@@ -2308,8 +2264,7 @@ function drawHUD() {
 
 // ─── DRAW: END SCREEN ────────────────────────────────────────────────────────
 function drawEndScreen(won) {
-  // Hopping ball drawn before the overlay — subtle, no glow
-  // Clipped below y=44 so it sneaks under the flood meter rather than crossing it
+  // Hopping ball drawn before the overlay
   if (won && winBall) {
     const hopT = Math.pow(Math.abs(Math.sin(winBall.t * Math.PI * 3.0)), 0.5);
     const yOff  = -34 * hopT;
@@ -2317,23 +2272,13 @@ function drawEndScreen(won) {
     const bx = winBall.x, by = winBall.y + yOff;
     const r = 11 * scale;
 
-    // Fade out as the ball approaches the HUD zone — looks like it slides under
-    const hudY = 44;
-    const fadeZone = 36;
-    const alpha = by < hudY ? 0 : by < hudY + fadeZone ? (by - hudY) / fadeZone : 1;
-
-    if (alpha > 0) {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      const grad = ctx.createRadialGradient(bx - 3, by - 3, 1, bx, by, r);
-      grad.addColorStop(0, '#b8ffcc');
-      grad.addColorStop(1, '#27c745');
-      ctx.beginPath();
-      ctx.arc(bx, by, r, 0, Math.PI * 2);
-      ctx.fillStyle = grad;
-      ctx.fill();
-      ctx.restore();
-    }
+    const grad = ctx.createRadialGradient(bx - 3, by - 3, 1, bx, by, r);
+    grad.addColorStop(0, '#b8ffcc');
+    grad.addColorStop(1, '#27c745');
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
   }
 
   ctx.fillStyle = 'rgba(0,0,0,0.82)';
