@@ -1536,9 +1536,11 @@ function drawTutorialPuzzleBox(glow) {
   ctx.restore();
 }
 
-function drawTutorialOpButtons() {
-  ctx.font = '12px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
-  ctx.fillText('select a symbol to fill the slot', W/2, TUT_OP_BASE_Y - 14);
+function drawTutorialOpButtons(showLabels = true) {
+  if (showLabels) {
+    ctx.font = '12px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
+    ctx.fillText('select a symbol to fill the slot', W/2, TUT_OP_BASE_Y - 14);
+  }
   tutOpHitZones = [];
   [OPERATORS.slice(0,3), OPERATORS.slice(3)].forEach((ops, ri) => {
     ops.forEach((op, i) => {
@@ -1554,8 +1556,10 @@ function drawTutorialOpButtons() {
       tutOpHitZones.push({ x:ox, y:oy, w:TUT_OP_BW, h:TUT_OP_BH, op });
     });
   });
-  ctx.font = '11px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
-  ctx.fillText('Tab to switch slots  ·  C for operator reference', W/2, TUT_OP_BASE_Y + 2*(TUT_OP_BH+TUT_OP_GAP) + 14);
+  if (showLabels) {
+    ctx.font = '11px monospace'; ctx.fillStyle = '#666'; ctx.textAlign = 'center';
+    ctx.fillText('Tab to switch slots  ·  C for operator reference', W/2, TUT_OP_BASE_Y + 2*(TUT_OP_BH+TUT_OP_GAP) + 14);
+  }
 }
 
 function drawTutorial() {
@@ -1617,7 +1621,7 @@ function drawTutorial() {
     ctx.fillText(eval2 ? ' ✓' : ' ✗', sideX + ctx.measureText(expr).width, TUT_ROW2_Y + 20);
   }
 
-  drawTutorialOpButtons();
+  drawTutorialOpButtons(false);
 
   // ── Door passage — white/grey sparkles, no colour yet
   ctx.save(); ctx.beginPath(); ctx.rect(doorX, TUT_DOOR_Y, doorW, TUT_DOOR_H); ctx.clip();
@@ -1672,6 +1676,101 @@ function drawTutorial() {
     ctx.font = '13px monospace'; ctx.fillStyle = capCol; ctx.textAlign = 'center';
     ctx.fillText(capText, W/2, capY);
   }
+  // ── Page 1 callout annotations ──────────────────────────────────────────────
+  {
+    // anno(lines, tx, ty, arrowX, arrowY, col, align, spanToY?)
+    // spanToY: if set, draws a bracket from arrowY to spanToY instead of a single arrowhead
+    const anno = (lines, tx, ty, arrowX, arrowY, col, align, spanToY) => {
+      const lh = 16;
+      const sy = ty - (lines.length - 1) * lh / 2;
+      ctx.font = 'bold 12px monospace';
+      ctx.fillStyle = col;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'middle';   // ty is the true vertical center of the text block
+      lines.forEach((l, i) => ctx.fillText(l, tx, sy + i * lh));
+      ctx.textBaseline = 'alphabetic';  // restore default
+      const lx0 = align === 'right' ? tx + 4 : tx - 4;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1;
+      if (spanToY !== undefined) {
+        // Horizontal dashed line from text to bracket midpoint, then vertical bracket
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(lx0, ty); ctx.lineTo(arrowX, ty); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(arrowX, arrowY); ctx.lineTo(arrowX, spanToY); ctx.stroke();
+        // bracket ticks at each end pointing toward content
+        const tick = align === 'right' ? 6 : -6;
+        ctx.beginPath();
+        ctx.moveTo(arrowX, arrowY);   ctx.lineTo(arrowX + tick, arrowY);
+        ctx.moveTo(arrowX, spanToY);  ctx.lineTo(arrowX + tick, spanToY);
+        ctx.stroke();
+      } else {
+        // Dashed line + filled arrowhead
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(lx0, arrowY); ctx.lineTo(arrowX, arrowY); ctx.stroke();
+        ctx.setLineDash([]);
+        const d = align === 'right' ? 1 : -1;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(arrowX, arrowY);
+        ctx.lineTo(arrowX - d*7, arrowY - 4);
+        ctx.lineTo(arrowX - d*7, arrowY + 4);
+        ctx.closePath(); ctx.fill();
+      }
+    };
+
+    // Row centers for bracket calculations
+    const row1CY = TUT_ROW1_Y + TUT_SLOT_H / 2;  // 144
+    const row2CY = TUT_ROW2_Y + TUT_SLOT_H / 2;  // 216
+    const rowMidY = (row1CY + row2CY) / 2;         // 180
+
+    // ① x value — points to "x = 5" display (left margin, box starts at TUT_BOX_X≈290)
+    // ty=75, arrowY=75: visually centers with "x = 5" (20px font, baseline 82 → visual center ≈73)
+    anno(['this gate\'s x value'], 278, 75, 393, 75, '#e8c060', 'right');
+
+    // ② fill slots — bracket spans both slot rows
+    anno(['pick a symbol to', 'fill each slot to', 'complete the expression'], 278, rowMidY, TUT_SLOT_CX - 8, row1CY, '#c0c0c0', 'right', row2CY);
+
+    // ③ connector — in open right-margin area below the box, arrow goes ↑ up to connector row
+    {
+      const col = '#c0c0c0';
+      const lines = ['connector:', 'links the two rows', '&& = both must pass', '|| = either one passes', 'press C for more'];
+      const lh = 16, tx = 602, ty = 300;
+      const sy = ty - (lines.length - 1) * lh / 2;  // first line y = 268
+      ctx.font = 'bold 12px monospace'; ctx.fillStyle = col; ctx.textAlign = 'left';
+      lines.forEach((l, i) => ctx.fillText(l, tx, sy + i * lh));
+      // L-shape: ↑ up from above text block along x=598, then ← left to box right edge
+      // x=598 is left of sub-text start (x=608) so the vertical clears any check/✗ marks
+      const lineStartY = sy - 4;               // just above first line ≈ 264
+      const targetX = W/2 + 20;  // just right of the && text (centered at W/2=440)
+      const targetY = TUT_CONN_Y;              // 184 — connector row
+      ctx.strokeStyle = col; ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(tx - 4, lineStartY);   // start just above + left of first line
+      ctx.lineTo(tx - 4, targetY);      // ↑ up to connector row
+      ctx.lineTo(targetX, targetY);     // ← left to box right edge
+      ctx.stroke(); ctx.setLineDash([]);
+      // arrowhead pointing left at box right edge
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(targetX, targetY);
+      ctx.lineTo(targetX + 7, targetY - 4);
+      ctx.lineTo(targetX + 7, targetY + 4);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // ④ operators — bracket spans both button rows, left side
+    const opRow1CY = TUT_OP_BASE_Y + TUT_OP_BH / 2;                              // center of top button row
+    const opRow2CY = TUT_OP_BASE_Y + TUT_OP_BH + TUT_OP_GAP + TUT_OP_BH / 2;    // center of bottom button row
+    const opLeftX  = W/2 - TUT_ROW_W / 2;                                         // left edge of button grid
+    anno(['click an operator', 'to fill each slot', 'Press tab to switch slots'], 278, (opRow1CY + opRow2CY) / 2, opLeftX - 8, opRow1CY, '#888888', 'right', opRow2CY);
+
+    // ⑤ door — points to right edge of door frame (doorX + doorW + 8)
+    const doorMidY = TUT_DOOR_Y + TUT_DOOR_H / 2;
+    anno(['door opens', 'when solved!'], 602, doorMidY, doorX + doorW + 10, doorMidY, '#e8c060', 'left');
+  }
+
   ctx.font = '11px monospace'; ctx.fillStyle = '#555';
   ctx.textAlign = 'center'; ctx.fillText('Esc to close', W/2, 522);
 
@@ -1722,8 +1821,28 @@ function drawTutorialPage2() {
     ctx.fillText(`x = ${val}`, cx, cy + 8);
   };
   const statMidY = TUT_BOX_Y + (TUT_ROW2_Y + TUT_SLOT_H - TUT_BOX_Y) / 2 + 10;
-  drawStatBox(TUT_BOX_X / 2 - 6, statMidY, BVAL, '#5599ff', blueOpen);
-  drawStatBox((TUT_BOX_X + TUT_BOX_W + W) / 2 + 6, statMidY, RVAL, '#ff5555', redOpen);
+  const blueCX = TUT_BOX_X / 2 - 6;
+  const redCX  = (TUT_BOX_X + TUT_BOX_W + W) / 2 + 6;
+  drawStatBox(blueCX, statMidY, BVAL, '#5599ff', blueOpen);
+  drawStatBox(redCX,  statMidY, RVAL, '#ff5555', redOpen);
+
+  // ── Stat box annotations — label each x value by its door color
+  const boxBotY = statMidY + 25;
+  const lblY    = boxBotY + 34;
+  ctx.lineWidth = 0.75; ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = '#3366aa';
+  ctx.beginPath(); ctx.moveTo(blueCX, boxBotY + 2); ctx.lineTo(blueCX, lblY - 12); ctx.stroke();
+  ctx.strokeStyle = '#993333';
+  ctx.beginPath(); ctx.moveTo(redCX,  boxBotY + 2); ctx.lineTo(redCX,  lblY - 12); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = 'bold 12px monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#3366aa';
+  ctx.fillText("blue door's", blueCX, lblY - 8);
+  ctx.fillText("x value",     blueCX, lblY + 8);
+  ctx.fillStyle = '#993333';
+  ctx.fillText("red door's", redCX, lblY - 8);
+  ctx.fillText("x value",    redCX, lblY + 8);
+  ctx.textBaseline = 'alphabetic';
 
   // ── Connector toggle hint (appears after both slots filled)
   tutConnectorHZ = null; tutConnectorBoxHZ = null;
